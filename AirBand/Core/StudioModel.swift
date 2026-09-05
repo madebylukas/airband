@@ -189,8 +189,10 @@ final class StudioModel: ObservableObject {
         else { music.muffle *= 0.88 }
         if let right {
             music.distortion += (right.xyRotation - music.distortion) * 0.34
-            let tempo = 64 + Double(1 - right.center.y).clamped * 112
-            music.tempo += (tempo - music.tempo) * 0.22
+            if mode != .jam {
+                let tempo = 64 + Double(1 - right.center.y).clamped * 112
+                music.tempo += (tempo - music.tempo) * 0.22
+            }
         } else {
             music.distortion *= 0.88
         }
