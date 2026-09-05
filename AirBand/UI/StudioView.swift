@@ -7,6 +7,8 @@ struct StudioView: View {
     @StateObject private var model = StudioModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showGuide = false
+    @State private var showLaunchIntro = true
+    @State private var launchCopyVisible = false
 
     var body: some View {
         GeometryReader { geo in
@@ -50,9 +52,14 @@ struct StudioView: View {
                     }
                     controls(compact: landscape).padding(.bottom, landscape ? 8 : 22)
                 }.padding(.horizontal, landscape ? 34 : 26).padding(.top, landscape ? 2 : 8)
+                if showLaunchIntro {
+                    launchIntro(landscape: landscape)
+                        .zIndex(20)
+                }
             }
         }
         .foregroundStyle(.white).preferredColorScheme(.dark)
+        .statusBarHidden(showLaunchIntro)
         .sheet(isPresented: $showGuide) { guide }
         .alert("Session paused", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK", role: .cancel) { model.error = nil }
@@ -64,11 +71,60 @@ struct StudioView: View {
                 Button("Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             }
         } message: { Text(model.error ?? "") }
-        .task { await model.start() }
+        .task { await runLaunchIntro() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await model.start() } }
+            if phase == .active, !showLaunchIntro { Task { await model.start() } }
             else { model.stop() }
         }
+    }
+
+    private func runLaunchIntro() async {
+        do { try await Task.sleep(for: .milliseconds(140)) } catch { return }
+        withAnimation(.easeOut(duration: 0.75)) { launchCopyVisible = true }
+        do { try await Task.sleep(for: .milliseconds(1550)) } catch { return }
+        withAnimation(.easeIn(duration: 0.48)) { launchCopyVisible = false }
+        do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+        showLaunchIntro = false
+        if scenePhase == .active { await model.start() }
+    }
+
+    private func launchIntro(landscape: Bool) -> some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 7) {
+                    Text("made by")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .tracking(2.6)
+                        .foregroundStyle(.white.opacity(0.48))
+                    Text("lukas winter")
+                        .font(.system(size: 29, weight: .ultraLight, design: .rounded))
+                        .tracking(-0.7)
+                    Text("@lukaswinter.za on instagram")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .tracking(1.05)
+                        .foregroundStyle(.white.opacity(0.42))
+                }
+                Spacer()
+                if !landscape {
+                    HStack(spacing: 9) {
+                        Image(systemName: "iphone.gen3.landscape")
+                            .font(.system(size: 13, weight: .ultraLight))
+                        Text("ROTATE TO LANDSCAPE")
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .tracking(1.65)
+                    }
+                    .foregroundStyle(.white.opacity(0.56))
+                    .frame(height: 48)
+                    .padding(.bottom, 25)
+                }
+            }
+            .padding(.horizontal, 28)
+            .opacity(launchCopyVisible ? 1 : 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(landscape ? "Made by Lukas Winter, at lukaswinter dot z a on Instagram" : "Made by Lukas Winter, at lukaswinter dot z a on Instagram. Rotate to landscape.")
     }
 
     private var readout: String {
