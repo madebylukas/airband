@@ -20,8 +20,8 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
     let session = ARSession()
     var onSample: ((TrackingSample) -> Void)?
     var onFailure: ((String) -> Void)?
-    var viewport = CGSize(width: 390, height: 700)
-    var interfaceOrientation: UIInterfaceOrientation = .portrait
+    private weak var sceneView: ARSCNView?
+    private var filteredOrientation: UIInterfaceOrientation = .unknown
 
     private let visionQueue = DispatchQueue(label: "com.airband.hands", qos: .userInitiated)
     private let handRequest = VNDetectHumanHandPoseRequest()
@@ -66,6 +66,10 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         session.delegateQueue = .main
     }
 
+    func attach(to view: ARSCNView) {
+        sceneView = view
+    }
+
     func start() {
         generation += 1
         hands = []; lastHands = 0
@@ -85,6 +89,7 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         zTilts = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, 0.0) })
         lastDepthSeen = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, -Double.infinity) })
         neutralPalmNormals = [:]
+        filteredOrientation = .unknown
         running = true
         let configuration = ARFaceTrackingConfiguration()
         configuration.isLightEstimationEnabled = true
@@ -119,8 +124,10 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         lastVision = frame.timestamp
         let pixelBuffer = frame.capturedImage
         let depthData = frame.capturedDepthData
-        let size = viewport
-        let orientation = interfaceOrientation == .unknown ? UIInterfaceOrientation.portrait : interfaceOrientation
+        let liveSize = sceneView?.bounds.size ?? .zero
+        let size = liveSize.width > 0 && liveSize.height > 0 ? liveSize : CGSize(width: 390, height: 700)
+        let liveOrientation = sceneView?.window?.windowScene?.interfaceOrientation ?? .unknown
+        let orientation = liveOrientation == .unknown ? UIInterfaceOrientation.portrait : liveOrientation
         let transform = frame.displayTransform(for: orientation, viewportSize: size)
         let timestamp = frame.timestamp
         let token = generation
@@ -152,6 +159,13 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
             }
 
             let assigned = Self.assignSides(candidates)
+            if self.filteredOrientation != orientation {
+                self.resetScreenSpaceTracking()
+                self.neutralPalmNormals = [:]
+                self.zTilts = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, 0.0) })
+                self.lastDepthSeen = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, -Double.infinity) })
+                self.filteredOrientation = orientation
+            }
             var output: [HandPoseSample] = []
             for candidate in assigned {
                 var smoothed = candidate.points
@@ -256,6 +270,22 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         guard let only = sorted.first else { return [] }
         let side = only.side ?? (centerX(only.points) < 0.5 ? .left : .right)
         return [(side, only.points, only.rawPoints)]
+    }
+
+    private func resetScreenSpaceTracking() {
+        filters = Dictionary(uniqueKeysWithValues: HandSide.allCases.map {
+            ($0, Array(repeating: OneEuroPointFilter(), count: HandJoint.allCases.count))
+        })
+        lastFilteredPoints = Dictionary(uniqueKeysWithValues: HandSide.allCases.map {
+            ($0, Array<CGPoint?>(repeating: nil, count: HandJoint.allCases.count))
+        })
+        lastJointSeen = Dictionary(uniqueKeysWithValues: HandSide.allCases.map {
+            ($0, Array(repeating: -Double.infinity, count: HandJoint.allCases.count))
+        })
+        velocities = Dictionary(uniqueKeysWithValues: HandSide.allCases.map {
+            ($0, Array(repeating: CGVector.zero, count: HandJoint.allCases.count))
+        })
+        lastPoseTimes = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, -Double.infinity) })
     }
 
     private static func predicted(_ point: CGPoint, velocity: CGVector, lead: Double) -> CGPoint {
@@ -404,15 +434,11 @@ struct CameraView: UIViewRepresentable {
         view.automaticallyUpdatesLighting = false
         view.preferredFramesPerSecond = 30
         view.backgroundColor = .black
+        tracker.attach(to: view)
         return view
     }
 
     func updateUIView(_ uiView: ARSCNView, context: Context) {
-        DispatchQueue.main.async {
-            if uiView.bounds.width > 0 { tracker.viewport = uiView.bounds.size }
-            if let orientation = uiView.window?.windowScene?.interfaceOrientation, orientation != .unknown {
-                tracker.interfaceOrientation = orientation
-            }
-        }
+        tracker.attach(to: uiView)
     }
 }

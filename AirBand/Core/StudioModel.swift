@@ -19,6 +19,7 @@ final class StudioModel: ObservableObject {
 
     let tracker = CameraTracker()
     private let audio = AudioEngine()
+    private let haptics = PerformanceHaptics()
     private var wink = WinkDetector()
     private var scaleLatch = HysteresisQuantizer(count: 5, initial: 2)
     private var octaveLatch = HysteresisQuantizer(count: 3, initial: 1, margin: 0.1)
@@ -69,6 +70,7 @@ final class StudioModel: ObservableObject {
         do {
             try audio.start()
             playing = true; starting = false; error = nil
+            haptics.prepare()
             wink.reset(); hasPlayedFinger = false; resetFingerPerformance(); lastFrame = Date()
             if !touchMode { tracker.start() }
             syncAudio()
@@ -104,12 +106,13 @@ final class StudioModel: ObservableObject {
         if mode == .jam { hasPlayedFinger = false }
         resetFingerPerformance()
         syncAudio()
+        haptics.modeChanged()
     }
 
     func toggleMetronome() {
         music.metronomeEnabled.toggle()
         syncAudio()
-        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.65)
+        haptics.metronome(enabled: music.metronomeEnabled)
     }
 
     func touch(at point: CGPoint) {
@@ -143,7 +146,7 @@ final class StudioModel: ObservableObject {
         }
         audio.trigger(gesture)
         flash(label)
-        UIImpactFeedbackGenerator(style: mode == .drums ? .rigid : .soft).impactOccurred()
+        haptics.wink(drumMode: mode == .drums)
     }
 
     private func flash(_ label: String) {
@@ -212,6 +215,14 @@ final class StudioModel: ObservableObject {
         music.brightness = sample.faceTracked ? max(0.12, sample.smile * 1.5).clamped : 0.24
         music.vibrato = sample.faceTracked ? (sample.jaw * 1.45).clamped : 0
         updateFingerPerformance(left: left, right: right, time: sample.time)
+        haptics.motion(
+            drumVolume: music.drumVolume,
+            melodyVolume: music.melodyVolume,
+            muffle: music.muffle,
+            distortion: music.distortion,
+            enabled: mode == .jam && handsReady,
+            time: sample.time
+        )
         if sample.faceTracked, let side = wink.update(left: sample.leftEye, right: sample.rightEye, time: sample.time) {
             triggerWink(side)
         } else if !sample.faceTracked {
@@ -233,7 +244,7 @@ final class StudioModel: ObservableObject {
                 if time - (readySince ?? time) >= 0.10 {
                     performanceArmed = true
                     handsReady = true
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    haptics.armed()
                 }
             } else {
                 readySince = nil
@@ -269,7 +280,7 @@ final class StudioModel: ObservableObject {
         }
         pulse(key)
         flash(label)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.48)
+        haptics.finger(key, gain: key.side == .left ? music.drumVolume : music.melodyVolume)
     }
 
     private func pulse(_ key: FingerKey) {
@@ -292,5 +303,96 @@ final class StudioModel: ObservableObject {
         rightFingerStrikes.reset()
         activeFingers = []
         fingerPulseTokens = [:]
+        haptics.resetMotion()
+    }
+}
+
+@MainActor
+private final class PerformanceHaptics {
+    private enum MotionChannel: Hashable { case drums, melody, muffle, distortion }
+
+    private let selection = UISelectionFeedbackGenerator()
+    private let notification = UINotificationFeedbackGenerator()
+    private let soft = UIImpactFeedbackGenerator(style: .soft)
+    private let light = UIImpactFeedbackGenerator(style: .light)
+    private let medium = UIImpactFeedbackGenerator(style: .medium)
+    private let heavy = UIImpactFeedbackGenerator(style: .heavy)
+    private let rigid = UIImpactFeedbackGenerator(style: .rigid)
+    private var motionQuantizers: [MotionChannel: HysteresisQuantizer] = [:]
+    private var lastMotionPulse = -Double.infinity
+
+    func prepare() {
+        selection.prepare(); notification.prepare(); soft.prepare(); light.prepare()
+        medium.prepare(); heavy.prepare(); rigid.prepare()
+    }
+
+    func resetMotion() {
+        motionQuantizers = [:]
+        lastMotionPulse = -Double.infinity
+    }
+
+    func armed() {
+        notification.notificationOccurred(.success)
+        notification.prepare()
+    }
+
+    func modeChanged() {
+        selection.selectionChanged()
+        selection.prepare()
+    }
+
+    func metronome(enabled: Bool) {
+        (enabled ? rigid : soft).impactOccurred(intensity: enabled ? 0.72 : 0.45)
+        (enabled ? rigid : soft).prepare()
+    }
+
+    func wink(drumMode: Bool) {
+        let generator = drumMode ? rigid : medium
+        generator.impactOccurred(intensity: drumMode ? 0.86 : 0.66)
+        generator.prepare()
+    }
+
+    func finger(_ key: FingerKey, gain: Double) {
+        let intensity = max(0.42, min(1, gain * 0.9 + 0.2))
+        let generator: UIImpactFeedbackGenerator
+        if key.side == .right {
+            generator = soft
+        } else {
+            generator = [heavy, rigid, medium, light, light][key.finger.rawValue]
+        }
+        generator.impactOccurred(intensity: intensity)
+        generator.prepare()
+    }
+
+    func motion(drumVolume: Double, melodyVolume: Double, muffle: Double, distortion: Double, enabled: Bool, time: Double) {
+        guard enabled else { resetMotion(); return }
+        let values: [(MotionChannel, Int, Double)] = [
+            (.drums, 5, drumVolume),
+            (.melody, 5, melodyVolume),
+            (.muffle, 3, muffle),
+            (.distortion, 3, distortion)
+        ]
+        var crossedDetent = false
+        for (channel, steps, value) in values {
+            if var quantizer = motionQuantizers[channel] {
+                let previous = quantizer.index
+                if quantizer.update(value) != previous { crossedDetent = true }
+                motionQuantizers[channel] = quantizer
+            } else {
+                motionQuantizers[channel] = HysteresisQuantizer(
+                    count: steps,
+                    initial: band(value, steps: steps),
+                    margin: 0.14
+                )
+            }
+        }
+        guard crossedDetent, time - lastMotionPulse > 0.09 else { return }
+        lastMotionPulse = time
+        selection.selectionChanged()
+        selection.prepare()
+    }
+
+    private func band(_ value: Double, steps: Int) -> Int {
+        min(steps - 1, max(0, Int(value.clamped * Double(steps))))
     }
 }
