@@ -39,6 +39,10 @@ struct CoreTests {
         expect(palmXYRotation(indexKnuckle: CGPoint(x: 100, y: 100), littleKnuckle: CGPoint(x: 100, y: 300)) == 1, "vertical knuckle axis has full effect")
         let diagonal = palmXYRotation(indexKnuckle: CGPoint(x: 100, y: 100), littleKnuckle: CGPoint(x: 300, y: 300))
         expect(abs(diagonal - 0.5) < 0.001, "diagonal knuckle axis has half effect")
+        let neutralNormal = SIMD3<Float>(0, 1, 0)
+        expect(relativePalmZTilt(normal: neutralNormal, neutral: neutralNormal) == 0, "flat starting palm is neutral in depth")
+        expect(relativePalmZTilt(normal: SIMD3<Float>(0, 0, 1), neutral: neutralNormal) == 0.5, "quarter palm flip has half depth effect")
+        expect(relativePalmZTilt(normal: SIMD3<Float>(0, -1, 0), neutral: neutralNormal) == 1, "upward palm flip has full depth effect")
 
         var detector = WinkDetector()
         func arm(_ at: Double) {

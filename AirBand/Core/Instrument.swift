@@ -199,6 +199,14 @@ func palmXYRotation(indexKnuckle: CGPoint, littleKnuckle: CGPoint) -> Double {
     return (angle / (.pi / 2)).clamped
 }
 
+func relativePalmZTilt(normal: SIMD3<Float>, neutral: SIMD3<Float>) -> Double {
+    let normalLength = sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z)
+    let neutralLength = sqrt(neutral.x * neutral.x + neutral.y * neutral.y + neutral.z * neutral.z)
+    guard normalLength > 0.00001, neutralLength > 0.00001 else { return 0 }
+    let dot = (normal.x * neutral.x + normal.y * neutral.y + normal.z * neutral.z) / (normalLength * neutralLength)
+    return ((1 - Double(min(1, max(-1, dot)))) * 0.5).clamped
+}
+
 extension Double {
     var clamped: Double { min(1, max(0, isFinite ? self : 0)) }
 }

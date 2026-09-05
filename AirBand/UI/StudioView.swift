@@ -206,7 +206,7 @@ struct StudioView: View {
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                 guideRow("hand.raised", "Left hand", "Height chooses the note or song key. Move sideways for octave. Angle the knuckles to muffle.")
                 guideRow("hand.raised.fingers.spread", "Right hand", "Height controls tempo in Song and Drums. Angle the knuckles for distortion.")
-                guideRow("viewfinder", "Palm plane", "Keep hands flat and level as neutral. Tilt a palm toward the camera to open the space effect.")
+                guideRow("viewfinder", "Palm plane", "Start flat and level to set neutral. Flip a palm upward to open the space effect.")
                 guideRow("face.smiling", "Face", "Smile for shimmer. Open your mouth for vibrato.")
                 guideRow("eye", "Winks", "Left plays your fart; right plays the ding. In Drums they become cymbal and kick.")
                 guideRow("music.note.list", "Song", "A pentatonic melody, bass line, and beat stay harmonically locked while your hands reshape them.")

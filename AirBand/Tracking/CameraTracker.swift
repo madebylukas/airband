@@ -45,6 +45,7 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
     private var lastPoseTimes = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, -Double.infinity) })
     private var zTilts = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, 0.0) })
     private var lastDepthSeen = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, -Double.infinity) })
+    private var neutralPalmNormals: [HandSide: SIMD3<Float>] = [:]
     private var generation = 0
     private var running = false
     static var supported: Bool { ARFaceTrackingConfiguration.isSupported }
@@ -83,6 +84,7 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         lastPoseTimes = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, -Double.infinity) })
         zTilts = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, 0.0) })
         lastDepthSeen = Dictionary(uniqueKeysWithValues: HandSide.allCases.map { ($0, -Double.infinity) })
+        neutralPalmNormals = [:]
         running = true
         let configuration = ARFaceTrackingConfiguration()
         configuration.isLightEstimationEnabled = true
@@ -198,9 +200,17 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
                 }
                 let openness = Self.openness(of: smoothed)
                 var zTilt = self.zTilts[candidate.side] ?? 0
-                if let measured = Self.palmZTilt(rawPoints: candidate.rawPoints, depthData: depthData) {
-                    zTilt += (measured - zTilt) * 0.32
-                    self.lastDepthSeen[candidate.side] = timestamp
+                if openness > 0.35,
+                   let palmNormal = Self.palmNormal(rawPoints: candidate.rawPoints, depthData: depthData) {
+                    if let neutral = self.neutralPalmNormals[candidate.side] {
+                        let measured = relativePalmZTilt(normal: palmNormal, neutral: neutral)
+                        zTilt += (measured - zTilt) * 0.32
+                        self.lastDepthSeen[candidate.side] = timestamp
+                    } else {
+                        self.neutralPalmNormals[candidate.side] = palmNormal
+                        zTilt = 0
+                        self.lastDepthSeen[candidate.side] = timestamp
+                    }
                 } else if timestamp - (self.lastDepthSeen[candidate.side] ?? -Double.infinity) > 0.35 {
                     zTilt *= 0.9
                 }
@@ -260,7 +270,7 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         )
     }
 
-    private static func palmZTilt(rawPoints: [CGPoint?], depthData: AVDepthData?) -> Double? {
+    private static func palmNormal(rawPoints: [CGPoint?], depthData: AVDepthData?) -> SIMD3<Float>? {
         guard let depthData,
               let calibration = depthData.cameraCalibrationData,
               let wrist = rawPoints[HandJoint.wrist.rawValue],
@@ -317,8 +327,7 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         let normal = simd_cross(little3D - index3D, middle3D - wrist3D)
         let length = simd_length(normal)
         guard length > 0.00001 else { return nil }
-        let cameraFacing = Double(abs((normal / length).z))
-        return ((cameraFacing - 0.08) / 0.78).clamped
+        return normal / length
     }
 
     private static func centerX(_ points: [CGPoint?]) -> CGFloat {
