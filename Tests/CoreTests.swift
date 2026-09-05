@@ -22,6 +22,10 @@ struct CoreTests {
         expect(abs(MusicalState.frequency(for: 69) - 440) < 0.001, "concert A tuning is accurate")
         state.spread = 10
         expect(state.volume <= 0.64, "gain stays bounded")
+        expect(performerHandSide(fromObserved: .left) == .right, "front-camera chirality maps to the performer")
+        expect(performerHandSide(fromObserved: .right) == .left, "front-camera right chirality maps to performer left")
+        expect(performerHandSide(atDisplayedX: 0.2) == .right, "mirrored screen-left fallback is performer right")
+        expect(performerHandSide(atDisplayedX: 0.8) == .left, "mirrored screen-right fallback is performer left")
 
         var latch = HysteresisQuantizer(count: 5, initial: 2)
         expect(latch.update(0.59) == 2, "pitch latch rejects boundary jitter")

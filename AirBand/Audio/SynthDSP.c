@@ -212,7 +212,7 @@ void ab_render(ABSynth *s, float *out, uint32_t frames) {
             double drivenPercussion = tanh(percussionMix * (1 + s->drive * 6)) / (1 + s->drive * 0.5);
             percussionMix = percussionMix * (1 - s->drive) + drivenPercussion * s->drive;
         }
-        double sample = musicMix * melodicGain * 0.82 + percussionMix;
+        double sample = musicMix * melodicGain * 0.48 + percussionMix;
 
         double cutoff = 260 + pow(1 - s->muffle, 2) * 15000;
         double filterAlpha = 1 - exp(-tau * cutoff / s->sr);

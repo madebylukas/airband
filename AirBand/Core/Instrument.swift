@@ -14,6 +14,18 @@ enum HandSide: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
 }
 
+func performerHandSide(fromObserved side: HandSide?) -> HandSide? {
+    switch side {
+    case .left: return .right
+    case .right: return .left
+    case nil: return nil
+    }
+}
+
+func performerHandSide(atDisplayedX x: CGFloat) -> HandSide {
+    x < 0.5 ? .right : .left
+}
+
 enum HandJoint: Int, CaseIterable {
     case wrist
     case thumbCMC, thumbMP, thumbIP, thumbTip

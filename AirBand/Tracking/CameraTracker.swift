@@ -151,7 +151,8 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
                         confidence += point.confidence
                     }
                     guard points.compactMap({ $0 }).count >= 7 else { continue }
-                    let side: HandSide? = observation.chirality == .left ? .left : observation.chirality == .right ? .right : nil
+                    let observedSide: HandSide? = observation.chirality == .left ? .left : observation.chirality == .right ? .right : nil
+                    let side = performerHandSide(fromObserved: observedSide)
                     candidates.append((side, points, rawPoints, confidence))
                 }
             } catch {
@@ -265,10 +266,10 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
         }
         let sorted = strongest.sorted { centerX($0.points) < centerX($1.points) }
         if sorted.count == 2 {
-            return [(.left, sorted[0].points, sorted[0].rawPoints), (.right, sorted[1].points, sorted[1].rawPoints)]
+            return [(.right, sorted[0].points, sorted[0].rawPoints), (.left, sorted[1].points, sorted[1].rawPoints)]
         }
         guard let only = sorted.first else { return [] }
-        let side = only.side ?? (centerX(only.points) < 0.5 ? .left : .right)
+        let side = only.side ?? performerHandSide(atDisplayedX: centerX(only.points))
         return [(side, only.points, only.rawPoints)]
     }
 
