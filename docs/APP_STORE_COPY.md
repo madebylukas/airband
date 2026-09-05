@@ -10,11 +10,11 @@ Raise your hands. Bend the sound. Wink at your own risk.
 
 ## Description
 
-AirBand turns your iPhone into an instrument you play in thin air.
+AirBand turns your iPhone into an instrument you play in thin air. Watch a live waveform and luminous finger skeleton react as you move.
 
 Raise a hand to choose a note. Spread both hands to control volume. Rotate your palm to distort the sound. Smile for shimmer, open your mouth for vibrato, and wink for a surprise no serious synthesizer would admit to having.
 
-Every note belongs to the same musical scale, so it feels good immediately. Three futuristic sound engines give you crystalline leads, orbital harmonies, and neon pulses.
+Every note belongs to the same musical scale, so it feels good immediately. Free mode lets you improvise. Song mode generates a melody, bass line, and beat you can transpose and reshape. Drums turns your eyes into questionable percussion controllers. Three futuristic sound engines give you crystalline leads, orbital harmonies, and neon pulses.
 
 No accounts. No setup. No footage saved. Just you and the signal.
 

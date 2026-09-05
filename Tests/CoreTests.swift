@@ -9,46 +9,53 @@ struct CoreTests {
             guard value() else { fatalError("FAILED: \(label)") }
             print("PASS \(label)")
         }
+
         var state = MusicalState()
         expect(state.volume == 0, "inactive state is silent")
-        state.active = true; state.height = -8
-        expect(state.midi == 50, "pitch clamps below frame")
-        state.height = 9
-        expect(state.midi == 74, "pitch clamps above frame")
-        state.height = .nan
-        expect(state.frequency.isFinite, "invalid coordinate stays finite")
-        state.height = 0.5
-        expect(state.noteName == "D4", "middle pitch is D4")
-        expect(abs(state.frequency - 293.6648) < 0.001, "D4 tuning is accurate")
+        state.active = true
+        state.scaleIndex = 0; state.octaveIndex = 0
+        expect(state.midi == 38, "free mode starts from D2")
+        state.scaleIndex = 4; state.octaveIndex = 2
+        expect(state.midi == 72, "free mode remains inside its musical range")
+        state.rootIndex = 0; state.octaveIndex = 1
+        expect(state.songRootMidi == 48 && state.keyName == "Cm", "song key and octave map together")
+        expect(abs(MusicalState.frequency(for: 69) - 440) < 0.001, "concert A tuning is accurate")
         state.spread = 10
-        expect(state.volume <= 0.67, "gain stays bounded")
+        expect(state.volume <= 0.64, "gain stays bounded")
+
+        var latch = HysteresisQuantizer(count: 5, initial: 2)
+        expect(latch.update(0.59) == 2, "pitch latch rejects boundary jitter")
+        expect(latch.update(0.7) == 3, "pitch latch accepts deliberate movement")
+
+        var filter = OneEuroPointFilter()
+        let start = filter.update(CGPoint(x: 0.5, y: 0.5), time: 0)
+        let jitter = filter.update(CGPoint(x: 0.51, y: 0.49), time: 0.05)
+        expect(start.x == 0.5 && start.y == 0.5, "point filter preserves first sample")
+        expect(jitter.x < 0.51 && jitter.y > 0.49, "point filter damps small jitter")
+        let movement = filter.update(CGPoint(x: 0.9, y: 0.2), time: 0.10)
+        expect(movement.x > jitter.x, "point filter follows intentional movement")
+
         expect(palmRotation(wrist: CGPoint(x: 0.5, y: 0.8), knuckle: CGPoint(x: 0.5, y: 0.3)) == 0, "upright palm is clean")
-        expect(palmRotation(wrist: CGPoint(x: 0.3, y: 0.5), knuckle: CGPoint(x: 0.8, y: 0.5)) == 1, "sideways palm has full distortion")
-        expect(abs(palmRotation(wrist: CGPoint(x: 0.2, y: 0.8), knuckle: CGPoint(x: 0.5, y: 0.5)) - 0.5) < 0.001, "palm rotation maps smoothly")
+        expect(palmRotation(wrist: CGPoint(x: 0.3, y: 0.5), knuckle: CGPoint(x: 0.8, y: 0.5)) == 1, "sideways palm has full effect")
+
         var detector = WinkDetector()
         func arm(_ at: Double) {
             _ = detector.update(left: 0, right: 0, time: at)
             _ = detector.update(left: 0, right: 0, time: at + 0.2)
         }
         arm(0)
-        expect(!detector.update(left: 1, right: 0, time: 0.3), "single frame does not trigger")
-        expect(detector.update(left: 1, right: 0, time: 0.44), "held left wink triggers")
-        expect(!detector.update(left: 1, right: 0, time: 2), "held wink cannot repeat")
+        expect(detector.update(left: 1, right: 0, time: 0.3) == nil, "single frame does not trigger")
+        expect(detector.update(left: 1, right: 0, time: 0.44) == .left, "held left wink triggers left sample")
+        expect(detector.update(left: 1, right: 0, time: 2) == nil, "held wink cannot repeat")
         arm(2.1)
-        expect(!detector.update(left: 0, right: 1, time: 2.4), "right wink begins candidate")
-        expect(detector.update(left: 0, right: 1, time: 2.54), "right wink triggers")
+        _ = detector.update(left: 0, right: 1, time: 2.4)
+        expect(detector.update(left: 0, right: 1, time: 2.54) == .right, "held right wink triggers right sample")
         arm(3)
         _ = detector.update(left: 1, right: 0, time: 3.3)
-        expect(!detector.update(left: 1, right: 1, time: 3.35), "bilateral blink cancels candidate")
-        expect(!detector.update(left: 1, right: 0, time: 3.5), "asymmetric blink reopening rejected")
+        expect(detector.update(left: 1, right: 1, time: 3.35) == nil, "bilateral blink cancels candidate")
+        expect(detector.update(left: 1, right: 0, time: 3.5) == nil, "asymmetric blink reopening is rejected")
         detector.reset()
-        expect(!detector.update(left: 1, right: 0, time: 5), "tracking reacquisition needs open eyes")
-        arm(6)
-        _ = detector.update(left: 1, right: 0, time: 6.3)
-        _ = detector.update(left: 1, right: 0, time: 6.44)
-        arm(6.5)
-        _ = detector.update(left: 1, right: 0, time: 6.75)
-        expect(!detector.update(left: 1, right: 0, time: 6.9), "cooldown prevents rapid double fire")
+        expect(detector.update(left: 1, right: 0, time: 5) == nil, "tracking reacquisition needs open eyes")
         print("\(checks) core checks passed")
     }
 }

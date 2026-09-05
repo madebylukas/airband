@@ -5,21 +5,26 @@ import AVFoundation
 final class StudioModel: ObservableObject {
     @Published var playing = false
     @Published var touchMode = !CameraTracker.supported
+    @Published var mode: PerformanceMode = .free
     @Published var palette: SoundPalette = .prism
     @Published var music = MusicalState()
-    @Published var hands: [CGPoint] = []
+    @Published var handPoses: [HandPoseSample] = []
+    @Published var waveform = Array<Float>(repeating: 0, count: 56)
     @Published var faceTracked = false
-    @Published var status = "Your body. The instrument."
     @Published var error: String?
-    @Published var winkCount = 0
-    @Published var fartFlash = false
+    @Published var gestureFlash: String?
     @Published var starting = false
+
     let tracker = CameraTracker()
     private let audio = AudioEngine()
     private var wink = WinkDetector()
+    private var scaleLatch = HysteresisQuantizer(count: 5, initial: 2)
+    private var octaveLatch = HysteresisQuantizer(count: 3, initial: 1, margin: 0.1)
+    private var rootLatch = HysteresisQuantizer(count: 12, initial: 5, margin: 0.08)
     private var lastFrame = Date.distantPast
     private var watchdog: Timer?
     private var startToken = UUID()
+    private var flashToken = UUID()
     private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -27,6 +32,7 @@ final class StudioModel: ObservableObject {
         tracker.onFailure = { [weak self] message in
             self?.stop(); self?.error = message
         }
+        audio.onWaveform = { [weak self] values in self?.waveform = values }
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.stop() }
         })
@@ -36,6 +42,7 @@ final class StudioModel: ObservableObject {
             Task { @MainActor in self?.stop() }
         })
     }
+
     func start() async {
         guard !playing, !starting else { return }
         starting = true
@@ -58,13 +65,12 @@ final class StudioModel: ObservableObject {
             playing = true; starting = false; error = nil
             wink.reset(); lastFrame = Date()
             if !touchMode { tracker.start() }
-            status = touchMode ? "Touch the field. Make a little future." : "Show your face and raise a hand."
+            syncAudio()
             watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self, self.playing, !self.touchMode, Date().timeIntervalSince(self.lastFrame) > 0.5 else { return }
-                    self.music.active = false; self.hands = []; self.faceTracked = false
+                    guard let self, self.playing, !self.touchMode, Date().timeIntervalSince(self.lastFrame) > 0.55 else { return }
+                    self.music.active = false; self.handPoses = []; self.faceTracked = false
                     self.wink.reset(); self.syncAudio()
-                    self.status = "Tracking paused. Move back into view."
                 }
             }
         } catch {
@@ -72,51 +78,102 @@ final class StudioModel: ObservableObject {
             self.error = "Audio couldn’t start: \(error.localizedDescription)"
         }
     }
+
     func stop() {
         startToken = UUID(); starting = false
         watchdog?.invalidate(); watchdog = nil
         tracker.stop(); audio.stop(); playing = false
-        music.active = false; hands = []; faceTracked = false; wink.reset()
-        status = "Your body. The instrument."
+        music.active = false; handPoses = []; faceTracked = false; wink.reset()
+        gestureFlash = nil
     }
-    func setMode(_ touch: Bool) { stop(); touchMode = touch }
-    func syncAudio() { audio.update(music, palette: palette) }
+
+    func setInputMode(touch: Bool) { stop(); touchMode = touch }
+
+    func syncAudio() { audio.update(music, mode: mode, palette: palette) }
+
     func touch(at point: CGPoint) {
         guard playing, touchMode else { return }
-        music.height = Double(1-point.y).clamped
-        music.spread = Double(point.x).clamped
+        music.height = Double(1 - point.y).clamped
+        music.horizontal = Double(point.x).clamped
+        music.scaleIndex = scaleLatch.update(music.height)
+        music.rootIndex = rootLatch.update(music.height)
+        music.octaveIndex = octaveLatch.update(music.horizontal)
+        music.tempo = 64 + music.height * 112
+        music.spread = 0.72
         music.active = true
-        hands = [CGPoint(x: max(0.08, point.x - 0.18), y: point.y), CGPoint(x: min(0.92, point.x + 0.18), y: point.y)]
         syncAudio()
     }
-    func endTouch() { music.active = false; hands = []; syncAudio() }
-    func triggerFart() {
+
+    func endTouch() {
+        music.active = false
+        syncAudio()
+    }
+
+    func triggerWink(_ side: WinkSide) {
         guard playing else { return }
-        audio.fart(); winkCount += 1; fartFlash = true
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        let gesture: AudioGesture
+        let label: String
+        if mode == .drums {
+            gesture = side == .left ? .cymbal : .kick
+            label = side == .left ? "CYMBAL" : "KICK"
+        } else {
+            gesture = side == .left ? .fart : .ding
+            label = side == .left ? "PFFT" : "DING"
+        }
+        audio.trigger(gesture)
+        flash(label)
+        UIImpactFeedbackGenerator(style: mode == .drums ? .rigid : .soft).impactOccurred()
+    }
+
+    private func flash(_ label: String) {
+        let token = UUID(); flashToken = token
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.72)) { gestureFlash = label }
         Task {
             try? await Task.sleep(for: .milliseconds(650))
-            fartFlash = false
+            guard flashToken == token else { return }
+            withAnimation(.easeOut(duration: 0.18)) { gestureFlash = nil }
         }
     }
+
     private func receive(_ sample: TrackingSample) {
         guard playing, !touchMode else { return }
         lastFrame = Date()
-        hands = sample.hands; faceTracked = sample.faceTracked
-        if !sample.hands.isEmpty {
-            let meanY = sample.hands.map(\.y).reduce(0, +) / CGFloat(sample.hands.count)
-            music.height += (Double(1-meanY).clamped - music.height) * 0.3
-            let spread = sample.hands.count == 2 ? Double(abs(sample.hands[1].x - sample.hands[0].x) / 0.7).clamped : 0.45
-            music.spread += (spread - music.spread) * 0.2
+        handPoses = sample.hands
+        faceTracked = sample.faceTracked
+        let left = sample.hand(.left)
+        let right = sample.hand(.right)
+        if let lead = left ?? right {
+            let targetHeight = Double(1 - lead.center.y).clamped
+            let targetHorizontal = Double(lead.center.x).clamped
+            music.height += (targetHeight - music.height) * 0.34
+            music.horizontal += (targetHorizontal - music.horizontal) * 0.28
+            music.scaleIndex = scaleLatch.update(music.height)
+            music.rootIndex = rootLatch.update(music.height)
+            music.octaveIndex = octaveLatch.update(music.horizontal)
+        }
+        if let left { music.muffle += (left.rotation - music.muffle) * 0.28 }
+        else { music.muffle *= 0.88 }
+        if let right {
+            music.distortion += (right.rotation - music.distortion) * 0.28
+            let tempo = 64 + Double(1 - right.center.y).clamped * 112
+            music.tempo += (tempo - music.tempo) * 0.22
+        } else {
+            music.distortion *= 0.88
+        }
+        if let left, let right {
+            let distance = Double(abs(right.center.x - left.center.x) / 0.72).clamped
+            music.spread += (distance - music.spread) * 0.22
+        } else {
+            music.spread += (0.62 - music.spread) * 0.15
         }
         music.active = !sample.hands.isEmpty
-        music.distortion += (sample.rotation - music.distortion) * 0.2
-        music.brightness = sample.faceTracked ? max(0.15, sample.smile * 1.5).clamped : 0.25
-        music.vibrato = sample.faceTracked ? (sample.jaw * 1.5).clamped : 0
-        if sample.faceTracked {
-            if wink.update(left: sample.leftEye, right: sample.rightEye, time: sample.time) { triggerFart() }
-        } else { wink.reset() }
-        status = music.active ? (sample.faceTracked ? "You’re the signal." : "Hands locked. Bring your face into view.") : "Raise a hand to play."
+        music.brightness = sample.faceTracked ? max(0.12, sample.smile * 1.5).clamped : 0.24
+        music.vibrato = sample.faceTracked ? (sample.jaw * 1.45).clamped : 0
+        if sample.faceTracked, let side = wink.update(left: sample.leftEye, right: sample.rightEye, time: sample.time) {
+            triggerWink(side)
+        } else if !sample.faceTracked {
+            wink.reset()
+        }
         syncAudio()
     }
 }

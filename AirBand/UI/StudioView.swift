@@ -14,28 +14,41 @@ struct StudioView: View {
                 field.ignoresSafeArea(edges: .bottom)
                 VStack(spacing: 0) {
                     header
+                    WaveformView(samples: model.waveform, active: model.playing)
+                        .frame(height: 58)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 12)
+                        .accessibilityLabel("Live audio waveform")
+                    HStack {
+                        Spacer()
+                        if model.playing {
+                            Text(readout)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.72))
+                                .contentTransition(.numericText())
+                        }
+                    }.frame(height: 25)
                     Spacer()
                     if !model.playing {
-                        VStack(spacing: 12) {
-                            Text("Music.\nIn your hands.")
-                                .font(.system(size: 43, weight: .light)).tracking(-1.8)
-                                .multilineTextAlignment(.center)
-                        }.padding(.bottom, geo.size.height * 0.10).allowsHitTesting(false)
+                        Text("Music.\nIn your hands.")
+                            .font(.system(size: 43, weight: .light)).tracking(-1.8)
+                            .multilineTextAlignment(.center)
+                            .padding(.bottom, geo.size.height * 0.12)
+                            .allowsHitTesting(false)
                     }
-                    if model.fartFlash {
-                        Image(systemName: "wind").font(.system(size: 32, weight: .ultraLight))
-                            .padding(20).airGlass(Circle()).transition(.scale.combined(with: .opacity))
+                    if let flash = model.gestureFlash {
+                        Text(flash)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(3)
+                            .padding(.horizontal, 18).frame(height: 46)
+                            .airGlass(Capsule())
+                            .transition(.scale.combined(with: .opacity))
                             .padding(.bottom, 22)
-                    }
-                    if model.music.active {
-                        Text(model.music.noteName).font(.system(size: 28, weight: .ultraLight, design: .rounded))
-                            .contentTransition(.numericText()).padding(.bottom, 24).allowsHitTesting(false)
                     }
                     if model.playing && model.touchMode {
                         HStack(spacing: 14) {
                             Image(systemName: "rotate.right").font(.system(size: 14, weight: .light)).foregroundStyle(.white.opacity(0.55))
                             Slider(value: $model.music.distortion, in: 0...1).tint(.white)
-                                .accessibilityLabel("Hand rotation distortion")
+                                .accessibilityLabel("Right hand distortion")
                                 .onChange(of: model.music.distortion) { _, _ in model.syncAudio() }
                         }.padding(.horizontal, 70).padding(.bottom, 12)
                     }
@@ -48,12 +61,21 @@ struct StudioView: View {
         .alert("Session paused", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK", role: .cancel) { model.error = nil }
             if !model.touchMode {
-                Button("Use Touch mode") { model.setMode(true) }
+                Button("Use Touch mode") { model.setInputMode(touch: true) }
                 Button("Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             }
         } message: { Text(model.error ?? "") }
         .onChange(of: scenePhase) { _, phase in if phase != .active { model.stop() } }
         .onChange(of: model.palette) { _, _ in model.syncAudio() }
+        .onChange(of: model.mode) { _, _ in model.syncAudio() }
+    }
+
+    private var readout: String {
+        switch model.mode {
+        case .free: return model.music.active ? model.music.noteName : "—"
+        case .song: return "\(model.music.keyName)  ·  \(Int(model.music.tempo)) BPM"
+        case .drums: return "\(Int(model.music.tempo)) BPM"
+        }
     }
 
     private var header: some View {
@@ -64,10 +86,24 @@ struct StudioView: View {
                     .accessibilityLabel(model.faceTracked ? "Face tracking active" : "Looking for your face")
             }
             Spacer()
-            Button { model.setMode(!model.touchMode) } label: {
-                Image(systemName: model.touchMode ? "hand.draw" : "camera")
-                    .font(.system(size: 17, weight: .regular)).frame(width: 44, height: 44)
-            }.airGlass(Circle()).accessibilityLabel(model.touchMode ? "Touch mode. Switch to camera" : "Camera mode. Switch to touch")
+            Menu {
+                Picker("Performance", selection: $model.mode) {
+                    ForEach(PerformanceMode.allCases) { mode in
+                        Label(mode.title, systemImage: mode.symbol).tag(mode)
+                    }
+                }
+                Divider()
+                Button {
+                    model.setInputMode(touch: !model.touchMode)
+                } label: {
+                    Label(model.touchMode ? "Use Camera" : "Use Touch", systemImage: model.touchMode ? "camera" : "hand.draw")
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: model.mode.symbol)
+                    Text(model.mode.title).font(.system(size: 12, weight: .medium))
+                }.padding(.horizontal, 15).frame(height: 44)
+            }.airGlass(Capsule()).accessibilityLabel("Mode: \(model.mode.title)")
             Button { showGuide = true } label: {
                 Image(systemName: "questionmark").font(.system(size: 14, weight: .medium)).frame(width: 44, height: 44)
             }.airGlass(Circle()).accessibilityLabel("How to play")
@@ -82,24 +118,31 @@ struct StudioView: View {
                         .saturation(0)
                         .overlay(.black.opacity(0.18))
                 } else {
-                    RadialGradient(colors: [Color(white: 0.12), ink], center: UnitPoint(x: 0.5, y: 0.37), startRadius: 5, endRadius: geo.size.height*0.5)
+                    RadialGradient(colors: [Color(white: 0.12), ink], center: UnitPoint(x: 0.5, y: 0.4), startRadius: 5, endRadius: geo.size.height * 0.55)
                 }
                 TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !model.playing)) { timeline in
-                    SignalCanvas(time: timeline.date.timeIntervalSinceReferenceDate,
-                                 playing: model.playing, active: model.music.active,
-                                 demo: model.touchMode || !model.playing,
-                                 hands: model.hands, brightness: model.music.brightness + model.music.distortion,
-                                 flash: model.fartFlash)
+                    SignalCanvas(
+                        time: timeline.date.timeIntervalSinceReferenceDate,
+                        playing: model.playing,
+                        active: model.music.active,
+                        demo: model.touchMode || !model.playing,
+                        hands: model.handPoses,
+                        mode: model.mode,
+                        brightness: model.music.brightness + model.music.distortion
+                    )
                 }.allowsHitTesting(false)
-                LinearGradient(colors: [.black.opacity(0.12), .clear, ink.opacity(0.95)], startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
+                LinearGradient(colors: [.black.opacity(0.08), .clear, ink.opacity(0.95)], startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
                 if model.touchMode {
                     Color.clear.contentShape(Rectangle())
                         .gesture(DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                model.touch(at: CGPoint(x: min(1, max(0, value.location.x / geo.size.width)), y: min(1, max(0, value.location.y / geo.size.height))))
+                                model.touch(at: CGPoint(
+                                    x: min(1, max(0, value.location.x / geo.size.width)),
+                                    y: min(1, max(0, value.location.y / geo.size.height))
+                                ))
                             }.onEnded { _ in model.endTouch() })
                         .accessibilityLabel("Instrument touch field")
-                        .accessibilityHint("After starting, drag up for pitch and right for volume.")
+                        .accessibilityHint("After starting, drag vertically for pitch and horizontally for octave.")
                 }
             }
         }
@@ -126,23 +169,25 @@ struct StudioView: View {
                     Circle().stroke(.white.opacity(0.3), lineWidth: 1).frame(width: 88, height: 88)
                     Circle().fill(.white).frame(width: 72, height: 72)
                     if model.starting { ProgressView().tint(.black) }
-                    else { Image(systemName: model.playing ? "stop.fill" : "play.fill")
+                    else {
+                        Image(systemName: model.playing ? "stop.fill" : "play.fill")
                             .font(.system(size: 23, weight: .medium)).foregroundStyle(.black)
-                            .offset(x: model.playing ? 0 : 2) }
+                            .offset(x: model.playing ? 0 : 2)
+                    }
                 }
             }.disabled(model.starting).accessibilityIdentifier("transport")
                 .accessibilityLabel(model.playing ? "Stop session" : "Start playing")
             if model.touchMode {
-                Button { model.triggerFart() } label: {
-                    Image(systemName: "eye").font(.system(size: 24, weight: .ultraLight)).frame(width: 76, height: 76)
+                Button { model.triggerWink(.left) } label: {
+                    Image(systemName: model.mode == .drums ? "burst" : "eye")
+                        .font(.system(size: 24, weight: .ultraLight)).frame(width: 76, height: 76)
                 }.airGlass(Circle()).opacity(model.playing ? 1 : 0.35).disabled(!model.playing)
-                    .accessibilityLabel("Wink: play fart sound")
+                    .accessibilityLabel(model.mode == .drums ? "Play cymbal" : "Play fart sample")
             } else {
-                // A passive meter balances the transport without another button.
                 HStack(alignment: .center, spacing: 4) {
-                    ForEach(0..<7) { index in
+                    ForEach(0..<7) { _ in
                         Capsule().fill(.white.opacity(model.music.active ? 0.8 : 0.18))
-                            .frame(width: 2, height: model.music.active ? CGFloat(8 + Int(model.music.volume * 35) * (4-abs(index-3))/4) : 4)
+                            .frame(width: 2, height: model.music.active ? 24 : 4)
                     }
                 }.frame(width: 76, height: 76).accessibilityLabel(model.music.active ? "Sound active" : "Raise a hand to play")
             }
@@ -151,25 +196,26 @@ struct StudioView: View {
 
     private var guide: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 27) {
+            VStack(alignment: .leading, spacing: 25) {
                 HStack {
-                    Text("A little movement.\nA lot of possibility.").font(.system(size: 29, weight: .light)).tracking(-0.6)
+                    Text("Move.\nMake noise.").font(.system(size: 31, weight: .light)).tracking(-0.8)
                     Spacer()
-                    Button { showGuide = false } label: { Image(systemName: "xmark").frame(width: 40, height: 40) }.airGlass(Circle()).accessibilityLabel("Close guide")
+                    Button { showGuide = false } label: { Image(systemName: "xmark").frame(width: 40, height: 40) }
+                        .airGlass(Circle()).accessibilityLabel("Close guide")
                 }
-                Text("Prop your iPhone upright, an arm’s length away. Keep your face and hands in view, with light in front of you.")
+                Text("Prop your iPhone upright, an arm’s length away. Keep both open hands and your face in view.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
-                guideRow("hand.raised", "Raise", "Higher hands, higher notes. Always in key.")
-                guideRow("arrow.left.and.right", "Spread", "Two hands apart for volume. Hands away for silence.")
-                guideRow("rotate.right", "Rotate", "Tilt your palm sideways to add smooth distortion.")
-                guideRow("face.smiling", "Express", "Smile for shimmer. Open your mouth for vibrato.")
-                guideRow("eye", "Wink", "One eye closed. One deeply unserious sound.")
-                Text("Touch mode: drag up for pitch, right for volume. The slider simulates palm rotation; the eye button simulates a wink.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                Label("Camera data stays on your iPhone.", systemImage: "lock.shield").font(.system(size: 11)).foregroundStyle(.secondary)
+                guideRow("hand.raised", "Left hand", "Height chooses the note or song key. Horizontal movement changes octave. Rotate outward to muffle.")
+                guideRow("hand.raised.fingers.spread", "Right hand", "Height controls tempo in Song and Drums. Rotate outward for distortion.")
+                guideRow("face.smiling", "Face", "Smile for shimmer. Open your mouth for vibrato.")
+                guideRow("eye", "Winks", "Left plays your fart; right plays the ding. In Drums they become cymbal and kick.")
+                guideRow("music.note.list", "Song", "A pentatonic melody, bass line, and beat stay harmonically locked while your hands reshape them.")
+                Label("Camera data stays on your iPhone.", systemImage: "lock.shield")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
             }.padding(28)
         }.background(ink).presentationDragIndicator(.visible)
     }
+
     private func guideRow(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(alignment: .top, spacing: 20) {
             Image(systemName: symbol).font(.system(size: 21, weight: .light)).frame(width: 26)
@@ -192,74 +238,148 @@ private extension View {
     }
 }
 
+private struct WaveformView: View {
+    let samples: [Float]
+    let active: Bool
+
+    var body: some View {
+        Canvas { context, size in
+            guard samples.count > 1 else { return }
+            let mid = size.height / 2
+            var shape = Path()
+            shape.move(to: CGPoint(x: 0, y: mid))
+            for (index, sample) in samples.enumerated() {
+                let x = CGFloat(index) / CGFloat(samples.count - 1) * size.width
+                let amplitude = max(0.8, CGFloat(sample) * size.height * 0.44)
+                shape.addLine(to: CGPoint(x: x, y: mid - amplitude))
+            }
+            for (index, sample) in samples.enumerated().reversed() {
+                let x = CGFloat(index) / CGFloat(samples.count - 1) * size.width
+                let amplitude = max(0.8, CGFloat(sample) * size.height * 0.44)
+                shape.addLine(to: CGPoint(x: x, y: mid + amplitude))
+            }
+            shape.closeSubpath()
+            context.fill(shape, with: .linearGradient(
+                Gradient(colors: [.white.opacity(active ? 0.48 : 0.13), .white.opacity(0.02)]),
+                startPoint: CGPoint(x: size.width / 2, y: mid),
+                endPoint: CGPoint(x: size.width / 2, y: size.height)
+            ))
+            var line = Path(); line.move(to: CGPoint(x: 0, y: mid)); line.addLine(to: CGPoint(x: size.width, y: mid))
+            context.stroke(line, with: .color(.white.opacity(0.14)), lineWidth: 0.5)
+        }
+    }
+}
+
 private struct SignalCanvas: View {
     let time: Double
     let playing: Bool
     let active: Bool
     let demo: Bool
-    let hands: [CGPoint]
+    let hands: [HandPoseSample]
+    let mode: PerformanceMode
     let brightness: Double
-    let flash: Bool
+
+    private let fingerChains: [[HandJoint]] = [
+        [.wrist, .thumbCMC, .thumbMP, .thumbIP, .thumbTip],
+        [.wrist, .indexMCP, .indexPIP, .indexDIP, .indexTip],
+        [.wrist, .middleMCP, .middlePIP, .middleDIP, .middleTip],
+        [.wrist, .ringMCP, .ringPIP, .ringDIP, .ringTip],
+        [.wrist, .littleMCP, .littlePIP, .littleDIP, .littleTip],
+        [.indexMCP, .middleMCP, .ringMCP, .littleMCP]
+    ]
+
     var body: some View {
         Canvas { context, size in
-            let w = size.width, h = size.height
-            let color = flash ? Color(red: 1, green: 1, blue: 1) : Color.white
-            let center = CGPoint(x: w/2, y: h*0.32)
-            if demo {
-                // Procedural sculpture in standby/touch mode. Actual face mesh is ARKit.
-                for row in 0..<19 {
-                    let latitude = Double(row) / 18 * .pi
-                    let radius = sin(latitude)
-                    var line = Path()
-                    for col in 0...28 {
-                        let longitude = Double(col) / 28 * .pi
-                        let x = center.x + CGFloat(cos(longitude) * radius) * w * 0.21
-                        let y = center.y + CGFloat(cos(latitude)) * h * 0.20 + CGFloat(sin(longitude)*radius) * h * 0.035
-                        let p = CGPoint(x: x, y: y)
-                        if col == 0 { line.move(to: p) } else { line.addLine(to: p) }
-                        if col % 2 == 0 {
-                            context.fill(Path(ellipseIn: CGRect(x: x-0.7, y: y-0.7, width: 1.4, height: 1.4)), with: .color(color.opacity(playing ? 0.65 : 0.5)))
-                        }
-                    }
-                    context.stroke(line, with: .color(color.opacity(0.16)), lineWidth: 0.5)
-                }
-                for col in 0...14 {
-                    let longitude = Double(col) / 14 * .pi
-                    var line = Path()
-                    for row in 0...36 {
-                        let latitude = Double(row)/36 * .pi
-                        let p = CGPoint(x: center.x + CGFloat(cos(longitude)*sin(latitude))*w*0.21,
-                                        y: center.y + CGFloat(cos(latitude))*h*0.20 + CGFloat(sin(longitude)*sin(latitude))*h*0.035)
-                        if row == 0 { line.move(to: p) } else { line.addLine(to: p) }
-                    }
-                    context.stroke(line, with: .color(color.opacity(0.14)), lineWidth: 0.5)
-                }
-                let ring = CGRect(x: center.x-w*0.32, y: center.y-h*0.25, width: w*0.64, height: h*0.50)
-                context.stroke(Path(ellipseIn: ring), with: .color(color.opacity(0.12)), style: StrokeStyle(lineWidth: 0.6, dash: [3, 9]))
-            }
-            let start = hands.first.map { CGPoint(x: $0.x*w, y: $0.y*h) } ?? CGPoint(x: w*0.12, y: h*0.64)
-            let end = hands.last.map { CGPoint(x: $0.x*w, y: $0.y*h) } ?? CGPoint(x: w*0.88, y: h*0.64)
-            if hands.count >= 2 || demo {
+            let color = Color.white
+            let center = CGPoint(x: size.width / 2, y: size.height * 0.39)
+            if demo { drawIdleField(context: &context, size: size, center: center, color: color) }
+
+            let centers = hands.map { CGPoint(x: $0.center.x * size.width, y: $0.center.y * size.height) }
+            if centers.count == 2 {
                 for strand in 0..<7 {
                     var path = Path()
-                    for step in 0...100 {
-                        let t = Double(step)/100
-                        let amplitude = (active ? 22.0 + brightness*16 : 6) * sin(t * .pi)
-                        let offset = sin(t*12 + (playing ? time*3 : 0) + Double(strand)*0.5)*amplitude
-                        let p = CGPoint(x: start.x + (end.x-start.x)*t, y: start.y + (end.y-start.y)*t + offset)
-                        if step == 0 { path.move(to: p) } else { path.addLine(to: p) }
+                    for step in 0...90 {
+                        let t = Double(step) / 90
+                        let amplitude = (active ? 20 + brightness * 18 : 5) * sin(t * .pi)
+                        let offset = sin(t * 12 + time * 3 + Double(strand) * 0.55) * amplitude
+                        let point = CGPoint(
+                            x: centers[0].x + (centers[1].x - centers[0].x) * t,
+                            y: centers[0].y + (centers[1].y - centers[0].y) * t + offset
+                        )
+                        if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
                     }
-                    context.stroke(path, with: .color(color.opacity(active ? 0.32 : 0.1)), lineWidth: strand == 3 ? 1.5 : 0.6)
-                }
-            }
-            for hand in hands {
-                let p = CGPoint(x: hand.x*w, y: hand.y*h)
-                context.fill(Path(ellipseIn: CGRect(x: p.x-4, y: p.y-4, width: 8, height: 8)), with: .color(.white))
-                for radius in [13.0, 22.0] {
-                    context.stroke(Path(ellipseIn: CGRect(x: p.x-radius, y: p.y-radius, width: radius*2, height: radius*2)), with: .color(color.opacity(0.5)), lineWidth: 0.7)
+                    context.stroke(path, with: .color(color.opacity(0.22)), lineWidth: strand == 3 ? 1.5 : 0.55)
                 }
             }
 
+            for hand in hands { draw(hand: hand, context: &context, size: size) }
+        }
+    }
+
+    private func draw(hand: HandPoseSample, context: inout GraphicsContext, size: CGSize) {
+        func screen(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x * size.width, y: point.y * size.height) }
+        for chain in fingerChains {
+            var path = Path()
+            var drawing = false
+            for joint in chain {
+                guard let point = hand[joint] else { drawing = false; continue }
+                let p = screen(point)
+                if drawing { path.addLine(to: p) } else { path.move(to: p); drawing = true }
+            }
+            context.stroke(path, with: .color(.white.opacity(0.72)), lineWidth: 1.05)
+        }
+        for joint in HandJoint.allCases {
+            guard let point = hand[joint] else { continue }
+            let p = screen(point)
+            let tip = [.thumbTip, .indexTip, .middleTip, .ringTip, .littleTip].contains(joint)
+            let radius: CGFloat = tip ? 2.8 : 1.45
+            context.fill(Path(ellipseIn: CGRect(x: p.x-radius, y: p.y-radius, width: radius*2, height: radius*2)), with: .color(.white.opacity(tip ? 0.95 : 0.65)))
+        }
+        let position = screen(hand.center)
+        let label = handLabel(hand.side)
+        context.draw(
+            Text(label).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1.5).foregroundColor(.white),
+            at: CGPoint(x: position.x, y: max(30, position.y - 54))
+        )
+    }
+
+    private func handLabel(_ side: HandSide) -> String {
+        switch mode {
+        case .free: return side == .left ? "MELODY" : "DISTORT"
+        case .song: return side == .left ? "MELODY" : "BASS · BEAT"
+        case .drums: return side == .left ? "CYMBAL" : "KICK"
+        }
+    }
+
+    private func drawIdleField(context: inout GraphicsContext, size: CGSize, center: CGPoint, color: Color) {
+        for row in 0..<19 {
+            let latitude = Double(row) / 18 * .pi
+            let radius = sin(latitude)
+            var line = Path()
+            for col in 0...28 {
+                let longitude = Double(col) / 28 * .pi
+                let x = center.x + CGFloat(cos(longitude) * radius) * size.width * 0.21
+                let y = center.y + CGFloat(cos(latitude)) * size.height * 0.17 + CGFloat(sin(longitude) * radius) * size.height * 0.03
+                let point = CGPoint(x: x, y: y)
+                if col == 0 { line.move(to: point) } else { line.addLine(to: point) }
+                if col.isMultiple(of: 2) {
+                    context.fill(Path(ellipseIn: CGRect(x: x-0.7, y: y-0.7, width: 1.4, height: 1.4)), with: .color(color.opacity(playing ? 0.65 : 0.5)))
+                }
+            }
+            context.stroke(line, with: .color(color.opacity(0.14)), lineWidth: 0.5)
+        }
+        for col in 0...14 {
+            let longitude = Double(col) / 14 * .pi
+            var line = Path()
+            for row in 0...36 {
+                let latitude = Double(row) / 36 * .pi
+                let point = CGPoint(
+                    x: center.x + CGFloat(cos(longitude) * sin(latitude)) * size.width * 0.21,
+                    y: center.y + CGFloat(cos(latitude)) * size.height * 0.17 + CGFloat(sin(longitude) * sin(latitude)) * size.height * 0.03
+                )
+                if row == 0 { line.move(to: point) } else { line.addLine(to: point) }
+            }
+            context.stroke(line, with: .color(color.opacity(0.12)), lineWidth: 0.5)
         }
     }
 }

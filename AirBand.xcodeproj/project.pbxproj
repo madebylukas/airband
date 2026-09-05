@@ -15,6 +15,8 @@
 		93A82F6C9290CC40223654CD /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5C05BA56DB3E3E5A6C7644F2 /* PrivacyInfo.xcprivacy */; };
 		9591486325147DFE9315CF8A /* StudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62113F70EAB89C38126498DE /* StudioView.swift */; };
 		9F658D3F0FCF8636DC79DD45 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581C590DE34DB4A6A59C2610 /* AudioEngine.swift */; };
+		A96CE8B091F113F1A3304A91 /* ding.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = F2520B8D137726EA8504798F /* ding.mp3 */; };
+		C0A432FC7F01D8D1178D7220 /* fart.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 6F13B8971E3D45BF78687B84 /* fart.mp3 */; };
 		CC4CFB04318642D7DD78FB14 /* SynthDSP.c in Sources */ = {isa = PBXBuildFile; fileRef = A588D3213DEB321D4B2F662B /* SynthDSP.c */; };
 /* End PBXBuildFile section */
 
@@ -24,11 +26,13 @@
 		581C590DE34DB4A6A59C2610 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
 		5C05BA56DB3E3E5A6C7644F2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		62113F70EAB89C38126498DE /* StudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioView.swift; sourceTree = "<group>"; };
+		6F13B8971E3D45BF78687B84 /* fart.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = fart.mp3; sourceTree = "<group>"; };
 		8216DAE3A6DF13F3F48F6500 /* AirBand-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "AirBand-Bridging-Header.h"; sourceTree = "<group>"; };
 		9268F4B76D9095C1A0D6EA5A /* SynthDSP.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SynthDSP.h; sourceTree = "<group>"; };
 		A588D3213DEB321D4B2F662B /* SynthDSP.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SynthDSP.c; sourceTree = "<group>"; };
 		C56A7F13F6C50D04A71F574E /* StudioModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioModel.swift; sourceTree = "<group>"; };
 		DDFA77BB6A889601C34FB925 /* CameraTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTracker.swift; sourceTree = "<group>"; };
+		F2520B8D137726EA8504798F /* ding.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = ding.mp3; sourceTree = "<group>"; };
 		F348F8234AFFA24EC1D081F6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		F4F372EBE5C51CEC76FCEC38 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F99BF2C06224EE0E005E018B /* Instrument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Instrument.swift; sourceTree = "<group>"; };
@@ -79,6 +83,8 @@
 			children = (
 				8216DAE3A6DF13F3F48F6500 /* AirBand-Bridging-Header.h */,
 				581C590DE34DB4A6A59C2610 /* AudioEngine.swift */,
+				F2520B8D137726EA8504798F /* ding.mp3 */,
+				6F13B8971E3D45BF78687B84 /* fart.mp3 */,
 				A588D3213DEB321D4B2F662B /* SynthDSP.c */,
 				9268F4B76D9095C1A0D6EA5A /* SynthDSP.h */,
 			);
@@ -164,6 +170,8 @@
 			files = (
 				8E41465A3BAB68B8D8EEE423 /* Assets.xcassets in Resources */,
 				93A82F6C9290CC40223654CD /* PrivacyInfo.xcprivacy in Resources */,
+				A96CE8B091F113F1A3304A91 /* ding.mp3 in Resources */,
+				C0A432FC7F01D8D1178D7220 /* fart.mp3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

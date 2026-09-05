@@ -1,6 +1,6 @@
 # AirBand
 
-AirBand turns an iPhone into a camera-driven musical instrument. Raise a hand for pitch, spread two hands for volume, rotate a palm for distortion, smile for brightness, open your mouth for vibrato, and wink for one strategically undignified sound.
+AirBand turns an iPhone into a camera-driven musical instrument. Vision tracks both hands down to the fingers while ARKit tracks facial expression. A live waveform shows the sound leaving the synth.
 
 Every pitch is quantized to D minor pentatonic, so improvisation stays musical. Tracking and synthesis run entirely on-device; camera frames are never stored or transmitted.
 
@@ -12,16 +12,22 @@ The project targets iOS 18 and uses SwiftUI, ARKit, Vision, SceneKit, and AVAudi
 
 ## Controls
 
-- Hand height: pitch
-- Distance between hands: volume
-- Palm rotation: distortion
+- Left-hand height: pitch or song key
+- Left-hand horizontal position: octave
+- Left-hand outward rotation: low-pass muffle
+- Right-hand height: tempo in Song and Drums
+- Right-hand outward rotation: distortion
+- Distance between hands: volume in Free mode
 - Smile: brightness
 - Open mouth: vibrato
-- Deliberate wink: fart
+- Left wink: supplied fart sample; cymbal in Drums
+- Right wink: supplied ding sample; kick in Drums
+
+Free mode is a pentatonic instrument. Song mode generates a transposable melody, bass line, and beat. Drums keeps the rhythm section and maps winks to percussion.
 
 ## Verification
 
-Run `./scripts/test.sh` for musical mapping, palm rotation, wink rejection, DSP stability, and audio-envelope checks. Build with:
+Run `./scripts/test.sh` for musical mapping, adaptive point filtering, pitch hysteresis, separate wink identity, sequencer output, DSP stability, and audio-envelope checks. Build with:
 
 ```sh
 xcodebuild -project AirBand.xcodeproj -scheme AirBand \
