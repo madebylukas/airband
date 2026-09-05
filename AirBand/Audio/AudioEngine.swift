@@ -5,8 +5,6 @@ enum AudioGesture {
 }
 
 final class AudioEngine {
-    var onWaveform: (([Float]) -> Void)?
-
     private let engine = AVAudioEngine()
     private let musicMixer = AVAudioMixerNode()
     private let reverb = AVAudioUnitReverb()
@@ -58,25 +56,6 @@ final class AudioEngine {
         engine.connect(reverb, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.outputVolume = 0.82
 
-        var tapCounter = 0
-        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, _ in
-            tapCounter += 1
-            guard tapCounter.isMultiple(of: 4), let channel = buffer.floatChannelData?.pointee else { return }
-            let frameCount = Int(buffer.frameLength)
-            guard frameCount > 0 else { return }
-            let buckets = 56
-            let stride = max(1, frameCount / buckets)
-            var values = [Float]()
-            values.reserveCapacity(buckets)
-            for bucket in 0..<buckets {
-                let start = min(frameCount - 1, bucket * stride)
-                let end = min(frameCount, start + stride)
-                var peak: Float = 0
-                for index in start..<end { peak = max(peak, abs(channel[index])) }
-                values.append(min(1, peak))
-            }
-            DispatchQueue.main.async { self?.onWaveform?(values) }
-        }
     }
 
     private func audioFile(named name: String) -> AVAudioFile? {
@@ -89,6 +68,7 @@ final class AudioEngine {
 
     func update(_ state: MusicalState, mode: PerformanceMode, palette: SoundPalette) {
         guard let synth else { return }
+        reverb.wetDryMix = Float(18 + state.space.clamped * 48)
         ab_set(
             synth,
             Float(state.frequency), Float(state.volume), Float(state.brightness.clamped),
@@ -118,12 +98,10 @@ final class AudioEngine {
         dingPlayer.stop()
         engine.stop()
         running = false
-        onWaveform?(Array(repeating: 0, count: 56))
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     deinit {
-        engine.mainMixerNode.removeTap(onBus: 0)
         engine.stop()
         if let synth { ab_destroy(synth) }
     }

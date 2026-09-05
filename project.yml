@@ -25,7 +25,10 @@ targets:
         NSCameraUsageDescription: AirBand uses your camera to turn hand movements and facial expressions into music. Camera images stay on your device.
         UILaunchScreen:
           UIColorName: LaunchBackground
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         UIRequiresFullScreen: true
         UIRequiredDeviceCapabilities: [arm64]
         UIApplicationSceneManifest:

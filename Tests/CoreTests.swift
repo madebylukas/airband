@@ -35,8 +35,10 @@ struct CoreTests {
         let movement = filter.update(CGPoint(x: 0.9, y: 0.2), time: 0.10)
         expect(movement.x > jitter.x, "point filter follows intentional movement")
 
-        expect(palmRotation(wrist: CGPoint(x: 0.5, y: 0.8), knuckle: CGPoint(x: 0.5, y: 0.3)) == 0, "upright palm is clean")
-        expect(palmRotation(wrist: CGPoint(x: 0.3, y: 0.5), knuckle: CGPoint(x: 0.8, y: 0.5)) == 1, "sideways palm has full effect")
+        expect(palmXYRotation(indexKnuckle: CGPoint(x: 100, y: 200), littleKnuckle: CGPoint(x: 300, y: 200)) == 0, "horizontal knuckle axis is neutral")
+        expect(palmXYRotation(indexKnuckle: CGPoint(x: 100, y: 100), littleKnuckle: CGPoint(x: 100, y: 300)) == 1, "vertical knuckle axis has full effect")
+        let diagonal = palmXYRotation(indexKnuckle: CGPoint(x: 100, y: 100), littleKnuckle: CGPoint(x: 300, y: 300))
+        expect(abs(diagonal - 0.5) < 0.001, "diagonal knuckle axis has half effect")
 
         var detector = WinkDetector()
         func arm(_ at: Double) {

@@ -9,7 +9,6 @@ final class StudioModel: ObservableObject {
     @Published var palette: SoundPalette = .prism
     @Published var music = MusicalState()
     @Published var handPoses: [HandPoseSample] = []
-    @Published var waveform = Array<Float>(repeating: 0, count: 56)
     @Published var faceTracked = false
     @Published var error: String?
     @Published var gestureFlash: String?
@@ -32,7 +31,6 @@ final class StudioModel: ObservableObject {
         tracker.onFailure = { [weak self] message in
             self?.stop(); self?.error = message
         }
-        audio.onWaveform = { [weak self] values in self?.waveform = values }
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.stop() }
         })
@@ -151,15 +149,19 @@ final class StudioModel: ObservableObject {
             music.rootIndex = rootLatch.update(music.height)
             music.octaveIndex = octaveLatch.update(music.horizontal)
         }
-        if let left { music.muffle += (left.rotation - music.muffle) * 0.28 }
+        if let left { music.muffle += (left.xyRotation - music.muffle) * 0.34 }
         else { music.muffle *= 0.88 }
         if let right {
-            music.distortion += (right.rotation - music.distortion) * 0.28
+            music.distortion += (right.xyRotation - music.distortion) * 0.34
             let tempo = 64 + Double(1 - right.center.y).clamped * 112
             music.tempo += (tempo - music.tempo) * 0.22
         } else {
             music.distortion *= 0.88
         }
+        let zTarget = sample.hands.isEmpty
+            ? 0
+            : sample.hands.map(\.zTilt).reduce(0, +) / Double(sample.hands.count)
+        music.space += (zTarget - music.space) * 0.24
         if let left, let right {
             let distance = Double(abs(right.center.x - left.center.x) / 0.72).clamped
             music.spread += (distance - music.spread) * 0.22

@@ -32,16 +32,18 @@ enum HandJoint: Int, CaseIterable {
 struct HandPoseSample: Identifiable {
     let side: HandSide
     var points: [CGPoint?]
-    var rotation: Double
+    var xyRotation: Double
+    var zTilt: Double
     var openness: Double
     var id: HandSide { side }
 
-    init(side: HandSide, points: [CGPoint?], rotation: Double = 0, openness: Double = 0) {
+    init(side: HandSide, points: [CGPoint?], xyRotation: Double = 0, zTilt: Double = 0, openness: Double = 0) {
         self.side = side
         self.points = points.count == HandJoint.allCases.count
             ? points
             : Array(points.prefix(HandJoint.allCases.count)) + Array(repeating: nil, count: max(0, HandJoint.allCases.count - points.count))
-        self.rotation = rotation.clamped
+        self.xyRotation = xyRotation.clamped
+        self.zTilt = zTilt.clamped
         self.openness = openness.clamped
     }
 
@@ -68,6 +70,7 @@ struct MusicalState {
     var vibrato: Double = 0
     var distortion: Double = 0
     var muffle: Double = 0
+    var space: Double = 0
     var tempo: Double = 108
     var scaleIndex = 2
     var octaveIndex = 1
@@ -147,8 +150,8 @@ struct OneEuroPointFilter {
 
     mutating func update(_ point: CGPoint, time: Double) -> CGPoint {
         CGPoint(
-            x: x.update(Double(point.x), time: time, minCutoff: 1.25, beta: 0.08),
-            y: y.update(Double(point.y), time: time, minCutoff: 1.25, beta: 0.08)
+            x: x.update(Double(point.x), time: time, minCutoff: 1.7, beta: 0.14),
+            y: y.update(Double(point.y), time: time, minCutoff: 1.7, beta: 0.14)
         )
     }
 }
@@ -187,10 +190,13 @@ struct WinkDetector {
     }
 }
 
-func palmRotation(wrist: CGPoint, knuckle: CGPoint) -> Double {
-    let dx = Double(knuckle.x - wrist.x), dy = Double(wrist.y - knuckle.y)
+func palmXYRotation(indexKnuckle: CGPoint, littleKnuckle: CGPoint) -> Double {
+    let dx = Double(littleKnuckle.x - indexKnuckle.x)
+    let dy = Double(littleKnuckle.y - indexKnuckle.y)
     guard hypot(dx, dy) > 0.015 else { return 0 }
-    return (abs(atan2(dx, dy)) / (.pi / 2)).clamped
+    var angle = abs(atan2(dy, dx))
+    if angle > .pi / 2 { angle = .pi - angle }
+    return (angle / (.pi / 2)).clamped
 }
 
 extension Double {
