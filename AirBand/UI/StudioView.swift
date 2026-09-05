@@ -136,7 +136,7 @@ struct StudioView: View {
                         hands: model.handPoses,
                         mode: model.mode,
                         ready: model.handsReady,
-                        activeFingers: model.activeFingers,
+                        activeFingers: model.activeFingers.union(model.heldSynthFingers),
                         brightness: model.music.brightness + model.music.distortion + model.music.space * 0.5 + model.music.vibrato * 0.3
                     )
                 }.allowsHitTesting(false)
@@ -242,7 +242,7 @@ struct StudioView: View {
                 Text("Prop your iPhone up in portrait or landscape, an arm’s length away. Keep both open hands and your face in view.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                 guideRow("hand.raised", "Jam position", "Show both open hands, palms up. The light turns green when the finger triggers are armed.")
-                guideRow("music.quarternote.3", "Left fingers", "Five notes use one minor pentatonic scale. Close the whole fist to distort the synth.")
+                guideRow("music.quarternote.3", "Left fingers", "Curl to start a note, hold to sustain it, and reopen to release. Close the whole fist to distort.")
                 guideRow("circle.grid.cross", "Right fingers", "Thumb: kick. Index: snare. Middle: hi-hat. Ring: crash. Little: cowbell.")
                 guideRow("arrow.up.and.down", "Hand height", "Raise the left hand for louder synth. Raise the right hand for louder drums.")
                 guideRow("viewfinder", "Palm plane", "Start flat and level to set neutral. Flip a palm upward to open the space effect.")

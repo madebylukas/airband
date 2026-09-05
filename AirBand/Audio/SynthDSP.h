@@ -13,6 +13,7 @@ void ab_kick(ABSynth *s);
 void ab_cymbal(ABSynth *s);
 void ab_trigger_drum(ABSynth *s, int voice, float gain);
 void ab_trigger_note(ABSynth *s, int note, float gain);
+void ab_set_note_gates(ABSynth *s, uint32_t mask, float gain);
 void ab_set_performance(ABSynth *s, float drumGain, float melodyGain, int metronomeEnabled);
 void ab_render(ABSynth *s, float *out, uint32_t frames);
 #endif

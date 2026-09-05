@@ -141,11 +141,13 @@ struct FingerStrikeDetector {
     private var previous = Array(repeating: 0.0, count: FingerName.allCases.count)
     private var lastFire = Array(repeating: -Double.infinity, count: FingerName.allCases.count)
     private var previousTime: Double?
+    private(set) var held: Set<FingerName> = []
 
     mutating func reset() { self = FingerStrikeDetector() }
 
     mutating func update(curls: [Double], enabled: Bool, time: Double) -> [FingerName] {
         guard time.isFinite else { reset(); return [] }
+        if !enabled { held.removeAll() }
         let dt = previousTime.map { min(0.2, max(1.0 / 120.0, time - $0)) }
         var strikes: [FingerName] = []
         for finger in FingerName.allCases {
@@ -155,10 +157,14 @@ struct FingerStrikeDetector {
             let velocity = dt.map { delta / $0 } ?? 0
             let fastCurl = curl >= 0.38 && previous[index] < 0.38 && delta >= 0.12 && velocity >= 2.0
             let deliberateCurl = curl >= 0.48 && previous[index] < 0.48
-            if curl < 0.30 { armed[index] = true }
+            if curl < 0.30 {
+                armed[index] = true
+                held.remove(finger)
+            }
             if enabled, armed[index], fastCurl || deliberateCurl, time - lastFire[index] > 0.11 {
                 armed[index] = false
                 lastFire[index] = time
+                held.insert(finger)
                 strikes.append(finger)
             }
             previous[index] = curl

@@ -23,6 +23,7 @@ struct ABSynth {
     _Atomic float targetFreq, targetGain, targetBright, targetVib, targetDrive;
     _Atomic float targetMuffle, targetRoot, targetTempo;
     _Atomic float targetDrumGain, targetMelodyGain;
+    _Atomic uint32_t noteGates;
     _Atomic int palette, mode, events, metronomeEnabled;
     uint32_t noise;
 };
@@ -41,6 +42,7 @@ ABSynth *ab_create(double sr) {
     atomic_init(&s->targetDrive, 0); atomic_init(&s->targetMuffle, 0);
     atomic_init(&s->targetRoot, 220); atomic_init(&s->targetTempo, 108);
     atomic_init(&s->targetDrumGain, 0.72f); atomic_init(&s->targetMelodyGain, 0.72f);
+    atomic_init(&s->noteGates, 0);
     atomic_init(&s->palette, 0); atomic_init(&s->mode, 0); atomic_init(&s->events, 0);
     atomic_init(&s->metronomeEnabled, 0);
     return s;
@@ -74,6 +76,11 @@ void ab_trigger_note(ABSynth *s, int note, float gain) {
     if (note < 0 || note > 4) return;
     atomic_store(&s->targetMelodyGain, fminf(1, fmaxf(0, gain)));
     atomic_fetch_or(&s->events, noteEvents[note]);
+}
+
+void ab_set_note_gates(ABSynth *s, uint32_t mask, float gain) {
+    atomic_store(&s->targetMelodyGain, fminf(1, fmaxf(0, gain)));
+    atomic_store(&s->noteGates, mask & 0x1Fu);
 }
 
 void ab_set_performance(ABSynth *s, float drumGain, float melodyGain, int metronomeEnabled) {
@@ -112,6 +119,7 @@ void ab_render(ABSynth *s, float *out, uint32_t frames) {
     float targetD = atomic_load(&s->targetDrive), targetM = atomic_load(&s->targetMuffle);
     float targetRoot = atomic_load(&s->targetRoot), targetTempo = atomic_load(&s->targetTempo);
     float targetDrumGain = atomic_load(&s->targetDrumGain), targetMelodyGain = atomic_load(&s->targetMelodyGain);
+    uint32_t noteGates = atomic_load(&s->noteGates);
     int mode = atomic_load(&s->mode), palette = atomic_load(&s->palette);
     int metronomeEnabled = atomic_load(&s->metronomeEnabled);
     int events = atomic_exchange(&s->events, 0);
@@ -174,7 +182,11 @@ void ab_render(ABSynth *s, float *out, uint32_t frames) {
             double notePhase = s->fingerPhases[note];
             double tone = palette_tone(s, notePhase, notePhase * 0.501, notePhase * 1.997, palette);
             fingerMelody += tone * s->fingerEnvs[note] * 0.34;
-            s->fingerEnvs[note] *= 0.99984f;
+            if (noteGates & (1u << note)) {
+                s->fingerEnvs[note] += (1.0f - s->fingerEnvs[note]) * 0.0028f;
+            } else {
+                s->fingerEnvs[note] *= 0.99965f;
+            }
         }
 
         s->kickPhase = wrap(s->kickPhase + (48 + 92 * s->kickEnv * s->kickEnv) / s->sr);

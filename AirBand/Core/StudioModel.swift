@@ -11,6 +11,7 @@ final class StudioModel: ObservableObject {
     @Published var handPoses: [HandPoseSample] = []
     @Published var handsReady = false
     @Published var activeFingers: Set<FingerKey> = []
+    @Published private(set) var heldSynthFingers: Set<FingerKey> = []
     @Published private(set) var hasPlayedFinger = false
     @Published var faceTracked = false
     @Published var error: String?
@@ -269,6 +270,8 @@ final class StudioModel: ObservableObject {
         let enabled = performanceArmed && bothVisible
         let leftHits = leftFingerStrikes.update(curls: left?.fingerCurls ?? [], enabled: enabled, time: time)
         let rightHits = rightFingerStrikes.update(curls: right?.fingerCurls ?? [], enabled: enabled, time: time)
+        heldSynthFingers = Set(leftFingerStrikes.held.map { FingerKey(side: .left, finger: $0) })
+        audio.setMelodyGates(leftFingerStrikes.held, gain: enabled ? music.melodyVolume : 0)
         for finger in leftHits { triggerFinger(.init(side: .left, finger: finger)) }
         for finger in rightHits { triggerFinger(.init(side: .right, finger: finger)) }
     }
@@ -320,6 +323,8 @@ final class StudioModel: ObservableObject {
         handsReady = false
         leftFingerStrikes.reset()
         rightFingerStrikes.reset()
+        heldSynthFingers = []
+        audio.setMelodyGates([], gain: 0)
         activeFingers = []
         fingerPulseTokens = [:]
         haptics.resetMotion()

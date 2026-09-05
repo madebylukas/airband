@@ -146,10 +146,19 @@ final class AudioEngine {
         }
     }
 
+    func setMelodyGates(_ fingers: Set<FingerName>, gain: Double) {
+        guard let synth, running else { return }
+        let mask = fingers.reduce(UInt32(0)) { partial, finger in
+            partial | (UInt32(1) << UInt32(finger.rawValue))
+        }
+        ab_set_note_gates(synth, mask, Float(gain.clamped))
+    }
+
     func stop() {
         if let synth {
             ab_set(synth, 220, 0, 0, 0, 0, 0, 220, 108, 0, 0)
             ab_set_performance(synth, 0, 0, 0)
+            ab_set_note_gates(synth, 0, 0)
         }
         samplePlayers.values.forEach { $0.stop() }
         engine.stop()
