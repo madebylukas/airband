@@ -230,7 +230,7 @@ final class StudioModel: ObservableObject {
             wink.reset()
         }
         if sample.faceTracked {
-            if mouth.update(openness: sample.jaw, time: sample.time) { haptics.mouthOpened() }
+            if mouth.update(openness: sample.jaw, time: sample.time) { triggerMouth() }
         } else {
             mouth.reset()
         }
@@ -276,7 +276,7 @@ final class StudioModel: ObservableObject {
         let gesture: AudioGesture
         let label: String
         if key.side == .left {
-            gesture = [.subKick, .kick, .snare, .cymbal, .hat][key.finger.rawValue]
+            gesture = [.cowbell, .kick, .snare, .cymbal, .hat][key.finger.rawValue]
             label = key.finger.drumName
             audio.trigger(gesture, gain: music.drumVolume)
         } else {
@@ -287,6 +287,12 @@ final class StudioModel: ObservableObject {
         pulse(key)
         flash(label)
         haptics.finger(key, gain: key.side == .left ? music.drumVolume : music.melodyVolume)
+    }
+
+    private func triggerMouth() {
+        audio.trigger(.rizz)
+        flash("RIZZ")
+        haptics.mouthOpened()
     }
 
     private func pulse(_ key: FingerKey) {
@@ -369,7 +375,7 @@ private final class PerformanceHaptics {
         if key.side == .right {
             generator = soft
         } else {
-            generator = [heavy, rigid, medium, light, light][key.finger.rawValue]
+            generator = [rigid, heavy, medium, light, light][key.finger.rawValue]
         }
         generator.impactOccurred(intensity: intensity)
         generator.prepare()

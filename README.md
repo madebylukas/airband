@@ -15,8 +15,8 @@ The project targets iOS 18 and uses SwiftUI, ARKit, Vision, SceneKit, and AVAudi
 ### Jam
 
 - Jam opens by default. Hold up both open hands until the rig turns green.
-- Left fingers: sub kick, kick, snare, cymbal, and hi-hat.
-- Right fingers: five minor-pentatonic notes using the selected synth.
+- Left fingers: cowbell, kick, snare, crash cymbal, and hi-hat.
+- Right fingers: five minor-pentatonic notes using the Prism synth.
 - Left-hand height: drum volume.
 - Right-hand height: melody volume; horizontal position changes octave.
 - Metronome button: independent tempo reference.
@@ -30,7 +30,7 @@ The project targets iOS 18 and uses SwiftUI, ARKit, Vision, SceneKit, and AVAudi
 - Right-hand outward rotation: distortion
 - Distance between hands: volume in Free mode
 - Smile: brightness
-- Open mouth: vibrato
+- Open mouth: vibrato and supplied rizz sample
 - Left wink: supplied fart sample; cymbal in Drums
 - Right wink: supplied ding sample; kick in Drums
 

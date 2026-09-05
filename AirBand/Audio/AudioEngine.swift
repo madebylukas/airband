@@ -1,20 +1,35 @@
 import AVFoundation
 
 enum AudioGesture {
-    case fart, ding, subKick, kick, snare, cymbal, hat
+    case fart, ding, rizz, cowbell, kick, snare, cymbal, hat
     case melody(Int)
+}
+
+private enum SampleVoice: String, CaseIterable {
+    case fart, ding, rizz, cowbell, kick, snare, crash, hat
+
+    var gain: Double {
+        switch self {
+        case .fart: 0.90
+        case .ding: 0.76
+        case .rizz: 0.86
+        case .cowbell: 0.90
+        case .kick: 0.90
+        case .snare: 0.88
+        case .crash: 0.82
+        case .hat: 0.90
+        }
+    }
 }
 
 final class AudioEngine {
     private let engine = AVAudioEngine()
     private let musicMixer = AVAudioMixerNode()
     private let reverb = AVAudioUnitReverb()
-    private let fartPlayer = AVAudioPlayerNode()
-    private let dingPlayer = AVAudioPlayerNode()
+    private let samplePlayers = Dictionary(uniqueKeysWithValues: SampleVoice.allCases.map { ($0, AVAudioPlayerNode()) })
+    private var sampleBuffers: [SampleVoice: AVAudioPCMBuffer] = [:]
     private var source: AVAudioSourceNode?
     private var synth: OpaquePointer?
-    private var fartFile: AVAudioFile?
-    private var dingFile: AVAudioFile?
     private(set) var running = false
 
     func start() throws {
@@ -25,8 +40,7 @@ final class AudioEngine {
         try session.setActive(true)
         if source == nil { try buildGraph(sampleRate: session.sampleRate) }
         try engine.start()
-        fartPlayer.play()
-        dingPlayer.play()
+        for voice in sampleBuffers.keys { samplePlayers[voice]?.play() }
         running = true
     }
 
@@ -36,8 +50,6 @@ final class AudioEngine {
             throw NSError(domain: "AirBand", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create the instrument."])
         }
         synth = dsp
-        fartFile = audioFile(named: "fart")
-        dingFile = audioFile(named: "ding")
 
         let node = AVAudioSourceNode { _, _, count, buffers in
             let list = UnsafeMutableAudioBufferListPointer(buffers)
@@ -47,10 +59,14 @@ final class AudioEngine {
             return noErr
         }
         source = node
-        [node, musicMixer, reverb, fartPlayer, dingPlayer].forEach(engine.attach)
+        [node, musicMixer, reverb].forEach(engine.attach)
         engine.connect(node, to: musicMixer, format: format)
-        engine.connect(fartPlayer, to: musicMixer, format: fartFile?.processingFormat)
-        engine.connect(dingPlayer, to: musicMixer, format: dingFile?.processingFormat)
+        for voice in SampleVoice.allCases {
+            guard let player = samplePlayers[voice], let buffer = audioBuffer(named: voice.rawValue) else { continue }
+            sampleBuffers[voice] = buffer
+            engine.attach(player)
+            engine.connect(player, to: musicMixer, format: buffer.format)
+        }
         reverb.loadFactoryPreset(.largeHall2)
         reverb.wetDryMix = 25
         engine.connect(musicMixer, to: reverb, format: format)
@@ -59,12 +75,33 @@ final class AudioEngine {
 
     }
 
-    private func audioFile(named name: String) -> AVAudioFile? {
+    private func audioBuffer(named name: String) -> AVAudioPCMBuffer? {
         for ext in ["mp3", "m4a", "wav"] {
             if let url = Bundle.main.url(forResource: name, withExtension: ext),
-               let file = try? AVAudioFile(forReading: url) { return file }
+               let file = try? AVAudioFile(forReading: url) {
+                let length = min(file.length, AVAudioFramePosition(UInt32.max))
+                guard let buffer = AVAudioPCMBuffer(
+                    pcmFormat: file.processingFormat,
+                    frameCapacity: AVAudioFrameCount(max(1, length))
+                ) else { return nil }
+                do {
+                    try file.read(into: buffer)
+                    return buffer
+                } catch {
+                    return nil
+                }
+            }
         }
         return nil
+    }
+
+    @discardableResult
+    private func play(_ voice: SampleVoice, gain: Double = 1) -> Bool {
+        guard let player = samplePlayers[voice], let buffer = sampleBuffers[voice] else { return false }
+        player.volume = Float((gain * voice.gain).clamped)
+        player.scheduleBuffer(buffer, at: nil, options: .interrupts)
+        if !player.isPlaying { player.play() }
+        return true
     }
 
     func update(_ state: MusicalState, mode: PerformanceMode, palette: SoundPalette) {
@@ -90,16 +127,21 @@ final class AudioEngine {
         let level = Float(gain.clamped)
         switch gesture {
         case .fart:
-            if let fartFile { fartPlayer.scheduleFile(fartFile, at: nil); if !fartPlayer.isPlaying { fartPlayer.play() } }
-            else { ab_fart(synth) }
+            if !play(.fart) { ab_fart(synth) }
         case .ding:
-            if let dingFile { dingPlayer.scheduleFile(dingFile, at: nil); if !dingPlayer.isPlaying { dingPlayer.play() } }
-            else { ab_ding(synth) }
-        case .subKick: ab_trigger_drum(synth, 0, level)
-        case .kick: ab_trigger_drum(synth, 1, level)
-        case .snare: ab_trigger_drum(synth, 2, level)
-        case .cymbal: ab_trigger_drum(synth, 3, level)
-        case .hat: ab_trigger_drum(synth, 4, level)
+            if !play(.ding) { ab_ding(synth) }
+        case .rizz:
+            _ = play(.rizz)
+        case .cowbell:
+            if !play(.cowbell, gain: gain) { ab_trigger_drum(synth, 0, level) }
+        case .kick:
+            if !play(.kick, gain: gain) { ab_trigger_drum(synth, 1, level) }
+        case .snare:
+            if !play(.snare, gain: gain) { ab_trigger_drum(synth, 2, level) }
+        case .cymbal:
+            if !play(.crash, gain: gain) { ab_trigger_drum(synth, 3, level) }
+        case .hat:
+            if !play(.hat, gain: gain) { ab_trigger_drum(synth, 4, level) }
         case .melody(let note): ab_trigger_note(synth, Int32(note), level)
         }
     }
@@ -109,8 +151,7 @@ final class AudioEngine {
             ab_set(synth, 220, 0, 0, 0, 0, 0, 220, 108, 0, 0)
             ab_set_performance(synth, 0, 0, 0)
         }
-        fartPlayer.stop()
-        dingPlayer.stop()
+        samplePlayers.values.forEach { $0.stop() }
         engine.stop()
         running = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)

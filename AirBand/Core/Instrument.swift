@@ -27,7 +27,7 @@ enum FingerName: Int, CaseIterable, Identifiable, Hashable {
     case thumb, index, middle, ring, little
     var id: Int { rawValue }
     var tipJoint: HandJoint { [.thumbTip, .indexTip, .middleTip, .ringTip, .littleTip][rawValue] }
-    var drumName: String { ["SUB", "KICK", "SNARE", "CYMBAL", "HAT"][rawValue] }
+    var drumName: String { ["COWBELL", "KICK", "SNARE", "CRASH", "HAT"][rawValue] }
 }
 
 struct FingerKey: Hashable {
