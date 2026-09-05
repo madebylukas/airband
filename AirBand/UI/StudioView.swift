@@ -17,7 +17,7 @@ struct StudioView: View {
                 if model.playing && !model.touchMode && model.mode == .jam {
                     volumeAxes(in: geo.size, landscape: landscape)
                 }
-                if model.playing && !model.touchMode && model.mode == .jam && !model.hasPlayedFinger {
+                if model.playing && !model.touchMode && model.mode == .jam && (!model.handsReady || !model.hasPlayedFinger) {
                     launchInstruction(landscape: landscape)
                 }
                 VStack(spacing: 0) {
@@ -44,7 +44,7 @@ struct StudioView: View {
                         HStack(spacing: 14) {
                             Image(systemName: "rotate.right").font(.system(size: 14, weight: .light)).foregroundStyle(.white.opacity(0.55))
                             Slider(value: $model.music.distortion, in: 0...1).tint(.white)
-                                .accessibilityLabel("Right hand distortion")
+                                .accessibilityLabel("Distortion")
                                 .onChange(of: model.music.distortion) { _, _ in model.syncAudio() }
                         }.padding(.horizontal, landscape ? geo.size.width * 0.25 : 70).padding(.bottom, landscape ? 7 : 12)
                     }
@@ -191,9 +191,9 @@ struct StudioView: View {
     private func volumeAxes(in size: CGSize, landscape: Bool) -> some View {
         let railHeight = min(landscape ? 142 : 245, size.height * (landscape ? 0.38 : 0.31))
         return HStack {
-            VolumeAxis(title: "DRUMS", value: model.music.drumVolume, ready: model.handsReady, height: railHeight)
+            VolumeAxis(title: "SYNTH", value: model.music.melodyVolume, ready: model.handsReady, height: railHeight)
             Spacer()
-            VolumeAxis(title: "MELODY", value: model.music.melodyVolume, ready: model.handsReady, height: railHeight)
+            VolumeAxis(title: "DRUMS", value: model.music.drumVolume, ready: model.handsReady, height: railHeight)
         }
         .padding(.horizontal, landscape ? 18 : 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -209,10 +209,10 @@ struct StudioView: View {
                     .font(.system(size: 17, weight: .light))
                     .foregroundStyle(model.handsReady ? readyGreen : .white.opacity(0.8))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(model.handsReady ? "CURL A FINGER" : "PALMS UP")
+                    Text(model.handsReady ? "CURL A FINGER" : "GET IN POSITION")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .tracking(1.7)
-                    Text(model.handsReady ? "LEFT DRUMS  ·  RIGHT NOTES" : "OPEN BOTH HANDS")
+                    Text(model.handsReady ? "LEFT SYNTH  ·  RIGHT DRUMS" : "PALMS UP  ·  OPEN BOTH HANDS")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .tracking(0.9)
                         .foregroundStyle(.white.opacity(0.5))
@@ -242,9 +242,9 @@ struct StudioView: View {
                 Text("Prop your iPhone up in portrait or landscape, an arm’s length away. Keep both open hands and your face in view.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                 guideRow("hand.raised", "Jam position", "Show both open hands, palms up. The light turns green when the finger triggers are armed.")
-                guideRow("circle.grid.cross", "Left fingers", "Thumb: cowbell. Index: kick. Middle: snare. Ring: crash. Little: hi-hat.")
-                guideRow("music.quarternote.3", "Right fingers", "Five notes use one minor pentatonic scale, so bad notes have been politely removed.")
-                guideRow("arrow.up.and.down", "Hand height", "Raise the left hand for louder drums. Raise the right hand for louder melody.")
+                guideRow("music.quarternote.3", "Left fingers", "Five notes use one minor pentatonic scale. Close the whole fist to distort the synth.")
+                guideRow("circle.grid.cross", "Right fingers", "Thumb: kick. Index: snare. Middle: hi-hat. Ring: crash. Little: cowbell.")
+                guideRow("arrow.up.and.down", "Hand height", "Raise the left hand for louder synth. Raise the right hand for louder drums.")
                 guideRow("viewfinder", "Palm plane", "Start flat and level to set neutral. Flip a palm upward to open the space effect.")
                 guideRow("face.smiling", "Face", "Smile for shimmer. Open your mouth for vibrato and rizz.")
                 guideRow("eye", "Winks", "Left plays your fart; right plays the ding. In Drums they become cymbal and kick.")
@@ -403,18 +403,20 @@ private struct SignalCanvas: View {
             lineWidth: 0.8
         )
         let label = handLabel(hand.side)
-        context.draw(
-            Text(label).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1.5).foregroundColor(.white),
-            at: CGPoint(x: position.x, y: max(30, position.y - 54))
-        )
+        if !label.isEmpty {
+            context.draw(
+                Text(label).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1.5).foregroundColor(.white),
+                at: CGPoint(x: position.x, y: max(30, position.y - 54))
+            )
+        }
     }
 
     private func handLabel(_ side: HandSide) -> String {
         switch mode {
         case .free: return side == .left ? "MELODY" : "DISTORT"
         case .song: return side == .left ? "MELODY" : "BASS · BEAT"
-        case .drums: return side == .left ? "CYMBAL" : "KICK"
-        case .jam: return side == .left ? "DRUMS" : "MELODY"
+        case .drums: return ""
+        case .jam: return side == .left ? "SYNTH" : "DRUMS"
         }
     }
 

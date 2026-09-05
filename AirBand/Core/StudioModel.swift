@@ -171,16 +171,16 @@ final class StudioModel: ObservableObject {
             music.rootIndex = 2
             if let left {
                 let height = Double(1 - left.center.y).clamped
-                music.drumVolume += (pow(height, 1.2) - music.drumVolume) * 0.42
+                music.melodyVolume += (pow(height, 1.2) - music.melodyVolume) * 0.42
+                music.octaveIndex = octaveLatch.update(Double(left.center.x).clamped)
             } else {
-                music.drumVolume *= 0.88
+                music.melodyVolume *= 0.88
             }
             if let right {
                 let height = Double(1 - right.center.y).clamped
-                music.melodyVolume += (pow(height, 1.2) - music.melodyVolume) * 0.42
-                music.octaveIndex = octaveLatch.update(Double(right.center.x).clamped)
+                music.drumVolume += (pow(height, 1.2) - music.drumVolume) * 0.42
             } else {
-                music.melodyVolume *= 0.88
+                music.drumVolume *= 0.88
             }
         } else if let lead = left ?? right {
             let targetHeight = Double(1 - lead.center.y).clamped
@@ -193,7 +193,14 @@ final class StudioModel: ObservableObject {
         }
         if let left { music.muffle += (left.xyRotation - music.muffle) * 0.34 }
         else { music.muffle *= 0.88 }
-        if let right {
+        if mode == .jam {
+            if let left {
+                let target = fistDistortion(left.fingerCurls)
+                music.distortion += (target - music.distortion) * 0.48
+            } else {
+                music.distortion *= 0.84
+            }
+        } else if let right {
             music.distortion += (right.xyRotation - music.distortion) * 0.34
             if mode != .jam {
                 let tempo = 64 + Double(1 - right.center.y).clamped * 112
@@ -275,8 +282,8 @@ final class StudioModel: ObservableObject {
         withAnimation(.easeOut(duration: 0.22)) { hasPlayedFinger = true }
         let gesture: AudioGesture
         let label: String
-        if key.side == .left {
-            gesture = [.cowbell, .kick, .snare, .cymbal, .hat][key.finger.rawValue]
+        if key.side == .right {
+            gesture = [.kick, .snare, .hat, .cymbal, .cowbell][key.finger.rawValue]
             label = key.finger.drumName
             audio.trigger(gesture, gain: music.drumVolume)
         } else {
@@ -286,7 +293,7 @@ final class StudioModel: ObservableObject {
         }
         pulse(key)
         flash(label)
-        haptics.finger(key, gain: key.side == .left ? music.drumVolume : music.melodyVolume)
+        haptics.finger(key, gain: key.side == .right ? music.drumVolume : music.melodyVolume)
     }
 
     private func triggerMouth() {
@@ -372,10 +379,10 @@ private final class PerformanceHaptics {
     func finger(_ key: FingerKey, gain: Double) {
         let intensity = max(0.42, min(1, gain * 0.9 + 0.2))
         let generator: UIImpactFeedbackGenerator
-        if key.side == .right {
+        if key.side == .left {
             generator = soft
         } else {
-            generator = [rigid, heavy, medium, light, light][key.finger.rawValue]
+            generator = [heavy, medium, light, light, rigid][key.finger.rawValue]
         }
         generator.impactOccurred(intensity: intensity)
         generator.prepare()

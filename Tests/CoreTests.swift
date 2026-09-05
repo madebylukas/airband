@@ -68,7 +68,10 @@ struct CoreTests {
         expect(!mouth.update(openness: 0.42, time: 0.1), "single mouth frame does not trigger")
         expect(mouth.update(openness: 0.42, time: 0.15), "deliberate mouth opening triggers")
         expect(!mouth.update(openness: 0.7, time: 0.3), "held mouth cannot repeat")
-        expect(FingerName.thumb.drumName == "COWBELL" && FingerName.ring.drumName == "CRASH", "finger drum labels match supplied samples")
+        expect(FingerName.thumb.drumName == "KICK" && FingerName.index.drumName == "SNARE", "thumb and index drum labels match supplied samples")
+        expect(FingerName.middle.drumName == "HAT" && FingerName.little.drumName == "COWBELL", "middle and little drum labels match supplied samples")
+        expect(fistDistortion([1, 0, 0, 0, 0]) < 0.05, "one synth finger stays clean")
+        expect(fistDistortion([1, 1, 1, 1, 1]) > 0.95, "closed synth fist reaches full distortion")
 
         var detector = WinkDetector()
         func arm(_ at: Double) {

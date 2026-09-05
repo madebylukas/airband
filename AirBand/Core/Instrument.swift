@@ -27,7 +27,7 @@ enum FingerName: Int, CaseIterable, Identifiable, Hashable {
     case thumb, index, middle, ring, little
     var id: Int { rawValue }
     var tipJoint: HandJoint { [.thumbTip, .indexTip, .middleTip, .ringTip, .littleTip][rawValue] }
-    var drumName: String { ["COWBELL", "KICK", "SNARE", "CRASH", "HAT"][rawValue] }
+    var drumName: String { ["KICK", "SNARE", "HAT", "CRASH", "COWBELL"][rawValue] }
 }
 
 struct FingerKey: Hashable {
@@ -170,6 +170,13 @@ struct FingerStrikeDetector {
 
 func mouthExpression(_ jaw: Double) -> Double {
     sqrt(((jaw - 0.08) / 0.54).clamped)
+}
+
+func fistDistortion(_ curls: [Double]) -> Double {
+    let fingers = curls.prefix(FingerName.allCases.count)
+    guard fingers.count >= 3 else { return 0 }
+    let average = fingers.map(\.clamped).reduce(0, +) / Double(fingers.count)
+    return pow(((average - 0.22) / 0.70).clamped, 1.3)
 }
 
 struct MouthOpenDetector {
