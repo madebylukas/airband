@@ -5,10 +5,12 @@ import AVFoundation
 final class StudioModel: ObservableObject {
     @Published var playing = false
     @Published var touchMode = !CameraTracker.supported
-    @Published var mode: PerformanceMode = .free
+    @Published var mode: PerformanceMode = .jam
     @Published var palette: SoundPalette = .prism
     @Published var music = MusicalState()
     @Published var handPoses: [HandPoseSample] = []
+    @Published var handsReady = false
+    @Published var activeFingers: Set<FingerKey> = []
     @Published var faceTracked = false
     @Published var error: String?
     @Published var gestureFlash: String?
@@ -20,6 +22,11 @@ final class StudioModel: ObservableObject {
     private var scaleLatch = HysteresisQuantizer(count: 5, initial: 2)
     private var octaveLatch = HysteresisQuantizer(count: 3, initial: 1, margin: 0.1)
     private var rootLatch = HysteresisQuantizer(count: 12, initial: 5, margin: 0.08)
+    private var leftFingerStrikes = FingerStrikeDetector()
+    private var rightFingerStrikes = FingerStrikeDetector()
+    private var readySince: Double?
+    private var performanceArmed = false
+    private var fingerPulseTokens: [FingerKey: UUID] = [:]
     private var lastFrame = Date.distantPast
     private var watchdog: Timer?
     private var startToken = UUID()
@@ -61,14 +68,14 @@ final class StudioModel: ObservableObject {
         do {
             try audio.start()
             playing = true; starting = false; error = nil
-            wink.reset(); lastFrame = Date()
+            wink.reset(); resetFingerPerformance(); lastFrame = Date()
             if !touchMode { tracker.start() }
             syncAudio()
             watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.playing, !self.touchMode, Date().timeIntervalSince(self.lastFrame) > 0.55 else { return }
                     self.music.active = false; self.handPoses = []; self.faceTracked = false
-                    self.wink.reset(); self.syncAudio()
+                    self.wink.reset(); self.resetFingerPerformance(); self.syncAudio()
                 }
             }
         } catch {
@@ -81,13 +88,27 @@ final class StudioModel: ObservableObject {
         startToken = UUID(); starting = false
         watchdog?.invalidate(); watchdog = nil
         tracker.stop(); audio.stop(); playing = false
-        music.active = false; handPoses = []; faceTracked = false; wink.reset()
+        music.active = false; handPoses = []; faceTracked = false; wink.reset(); resetFingerPerformance()
         gestureFlash = nil
     }
 
     func setInputMode(touch: Bool) { stop(); touchMode = touch }
 
-    func syncAudio() { audio.update(music, mode: mode, palette: palette) }
+    func syncAudio() {
+        let audioMode: PerformanceMode = touchMode && mode == .jam ? .free : mode
+        audio.update(music, mode: audioMode, palette: palette)
+    }
+
+    func modeDidChange() {
+        resetFingerPerformance()
+        syncAudio()
+    }
+
+    func toggleMetronome() {
+        music.metronomeEnabled.toggle()
+        syncAudio()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.65)
+    }
 
     func touch(at point: CGPoint) {
         guard playing, touchMode else { return }
@@ -140,7 +161,22 @@ final class StudioModel: ObservableObject {
         faceTracked = sample.faceTracked
         let left = sample.hand(.left)
         let right = sample.hand(.right)
-        if let lead = left ?? right {
+        if mode == .jam {
+            music.rootIndex = 2
+            if let left {
+                let height = Double(1 - left.center.y).clamped
+                music.drumVolume += (pow(height, 1.2) - music.drumVolume) * 0.42
+            } else {
+                music.drumVolume *= 0.88
+            }
+            if let right {
+                let height = Double(1 - right.center.y).clamped
+                music.melodyVolume += (pow(height, 1.2) - music.melodyVolume) * 0.42
+                music.octaveIndex = octaveLatch.update(Double(right.center.x).clamped)
+            } else {
+                music.melodyVolume *= 0.88
+            }
+        } else if let lead = left ?? right {
             let targetHeight = Double(1 - lead.center.y).clamped
             let targetHorizontal = Double(lead.center.x).clamped
             music.height += (targetHeight - music.height) * 0.34
@@ -171,11 +207,85 @@ final class StudioModel: ObservableObject {
         music.active = !sample.hands.isEmpty
         music.brightness = sample.faceTracked ? max(0.12, sample.smile * 1.5).clamped : 0.24
         music.vibrato = sample.faceTracked ? (sample.jaw * 1.45).clamped : 0
+        updateFingerPerformance(left: left, right: right, time: sample.time)
         if sample.faceTracked, let side = wink.update(left: sample.leftEye, right: sample.rightEye, time: sample.time) {
             triggerWink(side)
         } else if !sample.faceTracked {
             wink.reset()
         }
         syncAudio()
+    }
+
+    private func updateFingerPerformance(left: HandPoseSample?, right: HandPoseSample?, time: Double) {
+        guard mode == .jam else {
+            if handsReady || performanceArmed { resetFingerPerformance() }
+            return
+        }
+        let bothVisible = left != nil && right != nil
+        let readyPose = left.map(isReadyPose) == true && right.map(isReadyPose) == true
+        if !performanceArmed {
+            if readyPose {
+                if readySince == nil { readySince = time }
+                if time - (readySince ?? time) >= 0.10 {
+                    performanceArmed = true
+                    handsReady = true
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                }
+            } else {
+                readySince = nil
+            }
+        } else if !bothVisible {
+            resetFingerPerformance()
+        }
+
+        let enabled = performanceArmed && bothVisible
+        let leftHits = leftFingerStrikes.update(curls: left?.fingerCurls ?? [], enabled: enabled, time: time)
+        let rightHits = rightFingerStrikes.update(curls: right?.fingerCurls ?? [], enabled: enabled, time: time)
+        for finger in leftHits { triggerFinger(.init(side: .left, finger: finger)) }
+        for finger in rightHits { triggerFinger(.init(side: .right, finger: finger)) }
+    }
+
+    private func isReadyPose(_ hand: HandPoseSample) -> Bool {
+        let visibleTips = FingerName.allCases.compactMap { hand[$0.tipJoint] }.count
+        return visibleTips >= 4 && hand.fingerCurls.filter { $0 < 0.36 }.count >= 4
+    }
+
+    private func triggerFinger(_ key: FingerKey) {
+        let gesture: AudioGesture
+        let label: String
+        if key.side == .left {
+            gesture = [.subKick, .kick, .snare, .cymbal, .hat][key.finger.rawValue]
+            label = key.finger.drumName
+            audio.trigger(gesture, gain: music.drumVolume)
+        } else {
+            gesture = .melody(key.finger.rawValue)
+            label = ["D", "F", "G", "A", "C"][key.finger.rawValue]
+            audio.trigger(gesture, gain: music.melodyVolume)
+        }
+        pulse(key)
+        flash(label)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.48)
+    }
+
+    private func pulse(_ key: FingerKey) {
+        let token = UUID()
+        fingerPulseTokens[key] = token
+        activeFingers.insert(key)
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            guard fingerPulseTokens[key] == token else { return }
+            activeFingers.remove(key)
+            fingerPulseTokens[key] = nil
+        }
+    }
+
+    private func resetFingerPerformance() {
+        readySince = nil
+        performanceArmed = false
+        handsReady = false
+        leftFingerStrikes.reset()
+        rightFingerStrikes.reset()
+        activeFingers = []
+        fingerPulseTokens = [:]
     }
 }

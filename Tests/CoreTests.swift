@@ -43,6 +43,17 @@ struct CoreTests {
         expect(relativePalmZTilt(normal: neutralNormal, neutral: neutralNormal) == 0, "flat starting palm is neutral in depth")
         expect(relativePalmZTilt(normal: SIMD3<Float>(0, 0, 1), neutral: neutralNormal) == 0.5, "quarter palm flip has half depth effect")
         expect(relativePalmZTilt(normal: SIMD3<Float>(0, -1, 0), neutral: neutralNormal) == 1, "upward palm flip has full depth effect")
+        let straightFinger = [CGPoint(x: 0, y: 3), CGPoint(x: 0, y: 2), CGPoint(x: 0, y: 1), CGPoint(x: 0, y: 0)]
+        let curledFinger = [CGPoint(x: 0, y: 3), CGPoint(x: 0, y: 2), CGPoint(x: 1, y: 2), CGPoint(x: 1, y: 3)]
+        expect(normalizedFingerCurl(straightFinger) < 0.1, "straight finger reads open")
+        expect(normalizedFingerCurl(curledFinger) > 0.9, "bent finger reads down")
+
+        var fingerStrikes = FingerStrikeDetector()
+        expect(fingerStrikes.update(curls: [0, 0, 0, 0, 0], enabled: false, time: 0).isEmpty, "open fingers arm without firing")
+        expect(fingerStrikes.update(curls: [0, 0.6, 0, 0, 0], enabled: true, time: 0.1) == [.index], "finger curl crossing fires its own trigger")
+        expect(fingerStrikes.update(curls: [0, 0.8, 0, 0, 0], enabled: true, time: 0.2).isEmpty, "held finger cannot machine-gun")
+        _ = fingerStrikes.update(curls: [0, 0.1, 0, 0, 0], enabled: true, time: 0.3)
+        expect(fingerStrikes.update(curls: [0, 0.7, 0, 0, 0], enabled: true, time: 0.5) == [.index], "reopened finger can strike again")
 
         var detector = WinkDetector()
         func arm(_ at: Double) {
@@ -51,15 +62,16 @@ struct CoreTests {
         }
         arm(0)
         expect(detector.update(left: 1, right: 0, time: 0.3) == nil, "single frame does not trigger")
-        expect(detector.update(left: 1, right: 0, time: 0.44) == .left, "held left wink triggers left sample")
+        expect(detector.update(left: 1, right: 0, time: 0.36) == .left, "brief left wink triggers left sample")
         expect(detector.update(left: 1, right: 0, time: 2) == nil, "held wink cannot repeat")
         arm(2.1)
         _ = detector.update(left: 0, right: 1, time: 2.4)
-        expect(detector.update(left: 0, right: 1, time: 2.54) == .right, "held right wink triggers right sample")
+        expect(detector.update(left: 0, right: 1, time: 2.46) == .right, "brief right wink triggers right sample")
         arm(3)
         _ = detector.update(left: 1, right: 0, time: 3.3)
         expect(detector.update(left: 1, right: 1, time: 3.35) == nil, "bilateral blink cancels candidate")
         expect(detector.update(left: 1, right: 0, time: 3.5) == nil, "asymmetric blink reopening is rejected")
+        expect(detector.update(left: 1, right: 0, time: 3.56) == nil, "ordinary blink cannot become a delayed wink")
         detector.reset()
         expect(detector.update(left: 1, right: 0, time: 5) == nil, "tracking reacquisition needs open eyes")
         print("\(checks) core checks passed")

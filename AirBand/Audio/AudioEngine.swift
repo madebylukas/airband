@@ -1,7 +1,8 @@
 import AVFoundation
 
 enum AudioGesture {
-    case fart, ding, kick, cymbal
+    case fart, ding, subKick, kick, snare, cymbal, hat
+    case melody(Int)
 }
 
 final class AudioEngine {
@@ -76,10 +77,17 @@ final class AudioEngine {
             Float(state.songRootFrequency), Float(min(176, max(62, state.tempo))),
             Int32(mode.rawValue), Int32(palette.rawValue)
         )
+        ab_set_performance(
+            synth,
+            Float(state.drumVolume.clamped),
+            Float(state.melodyVolume.clamped),
+            state.metronomeEnabled ? 1 : 0
+        )
     }
 
-    func trigger(_ gesture: AudioGesture) {
+    func trigger(_ gesture: AudioGesture, gain: Double = 1) {
         guard let synth, running else { return }
+        let level = Float(gain.clamped)
         switch gesture {
         case .fart:
             if let fartFile { fartPlayer.scheduleFile(fartFile, at: nil); if !fartPlayer.isPlaying { fartPlayer.play() } }
@@ -87,13 +95,20 @@ final class AudioEngine {
         case .ding:
             if let dingFile { dingPlayer.scheduleFile(dingFile, at: nil); if !dingPlayer.isPlaying { dingPlayer.play() } }
             else { ab_ding(synth) }
-        case .kick: ab_kick(synth)
-        case .cymbal: ab_cymbal(synth)
+        case .subKick: ab_trigger_drum(synth, 0, level)
+        case .kick: ab_trigger_drum(synth, 1, level)
+        case .snare: ab_trigger_drum(synth, 2, level)
+        case .cymbal: ab_trigger_drum(synth, 3, level)
+        case .hat: ab_trigger_drum(synth, 4, level)
+        case .melody(let note): ab_trigger_note(synth, Int32(note), level)
         }
     }
 
     func stop() {
-        if let synth { ab_set(synth, 220, 0, 0, 0, 0, 0, 220, 108, 0, 0) }
+        if let synth {
+            ab_set(synth, 220, 0, 0, 0, 0, 0, 220, 108, 0, 0)
+            ab_set_performance(synth, 0, 0, 0)
+        }
         fartPlayer.stop()
         dingPlayer.stop()
         engine.stop()

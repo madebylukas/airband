@@ -37,7 +37,18 @@ int main(void) {
     ab_kick(s); ab_cymbal(s);
     check(render_rms(s, buffer, 48000) > 0.01, "manual drum gestures are audible");
 
+    ab_set(s, 220, 0, 0.5f, 0, 0.25f, 0, 146.83f, 116, 3, 0);
+    ab_set_performance(s, 0.85f, 0.75f, 0);
+    for (int voice = 0; voice < 5; voice++) ab_trigger_drum(s, voice, 0.85f);
+    for (int note = 0; note < 5; note++) ab_trigger_note(s, note, 0.75f);
+    check(render_rms(s, buffer, 48000) > 0.01, "finger jam drums and pentatonic notes are audible");
+
+    ab_set(s, 220, 0, 0, 0, 0, 0, 146.83f, 120, 3, 0);
+    ab_set_performance(s, 0, 0, 1);
+    check(render_rms(s, buffer, 48000) > 0.001, "metronome is audible without either hand");
+
     ab_set(s, 220, 0, 0, 0, 0, 0, 220, 108, 0, 0);
+    ab_set_performance(s, 0, 0, 0);
     render_rms(s, buffer, 48000);
     check(fabs(buffer[47999]) < 0.0001, "release reaches silence");
     ab_fart(s); check(render_rms(s, buffer, 48000) > 0.001, "fallback fart is audible");

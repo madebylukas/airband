@@ -1,6 +1,6 @@
 # AirBand
 
-AirBand turns an iPhone into a camera-driven musical instrument. Vision tracks both hands down to the fingers while ARKit tracks facial expression. A live waveform shows the sound leaving the synth.
+AirBand turns an iPhone into a camera-driven musical instrument. Vision tracks both hands down to the fingers while ARKit tracks facial expression.
 
 Every pitch is quantized to D minor pentatonic, so improvisation stays musical. Tracking and synthesis run entirely on-device; camera frames are never stored or transmitted.
 
@@ -11,6 +11,17 @@ Open `AirBand.xcodeproj` in Xcode, choose a Face ID iPhone, and press Run. Camer
 The project targets iOS 18 and uses SwiftUI, ARKit, Vision, SceneKit, and AVAudioEngine. Its Liquid Glass controls activate on iOS 26, with a material fallback on earlier supported versions.
 
 ## Controls
+
+### Jam
+
+- Jam opens by default. Hold up both open hands until the rig turns green.
+- Left fingers: sub kick, kick, snare, cymbal, and hi-hat.
+- Right fingers: five minor-pentatonic notes using the selected synth.
+- Left-hand height: drum volume.
+- Right-hand height: melody volume; horizontal position changes octave.
+- Metronome button: independent tempo reference.
+
+### Other modes
 
 - Left-hand height: pitch or song key
 - Left-hand horizontal position: octave
@@ -23,7 +34,7 @@ The project targets iOS 18 and uses SwiftUI, ARKit, Vision, SceneKit, and AVAudi
 - Left wink: supplied fart sample; cymbal in Drums
 - Right wink: supplied ding sample; kick in Drums
 
-Free mode is a pentatonic instrument. Song mode generates a transposable melody, bass line, and beat. Drums keeps the rhythm section and maps winks to percussion.
+Jam is the two-hand finger instrument. Free mode is a continuous pentatonic instrument. Song mode generates a transposable melody, bass line, and beat. Drums keeps the sequenced rhythm section.
 
 ## Verification
 

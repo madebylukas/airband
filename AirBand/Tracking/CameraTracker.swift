@@ -215,12 +215,14 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
                     zTilt *= 0.9
                 }
                 self.zTilts[candidate.side] = zTilt
+                let fingerCurls = Self.fingerCurls(of: candidate.points, viewport: size)
                 output.append(HandPoseSample(
                     side: candidate.side,
                     points: smoothed,
                     xyRotation: xyRotation * (0.35 + 0.65 * openness),
                     zTilt: zTilt,
-                    openness: openness
+                    openness: openness,
+                    fingerCurls: fingerCurls
                 ))
             }
             output.sort { $0.side == .left && $1.side == .right }
@@ -333,6 +335,26 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
     private static func centerX(_ points: [CGPoint?]) -> CGFloat {
         let visible = points.compactMap { $0 }
         return visible.isEmpty ? 0.5 : visible.map(\.x).reduce(0, +) / CGFloat(visible.count)
+    }
+
+    private static func fingerCurls(of points: [CGPoint?], viewport: CGSize) -> [Double] {
+        let chains: [[HandJoint]] = [
+            [.thumbCMC, .thumbMP, .thumbIP, .thumbTip],
+            [.indexMCP, .indexPIP, .indexDIP, .indexTip],
+            [.middleMCP, .middlePIP, .middleDIP, .middleTip],
+            [.ringMCP, .ringPIP, .ringDIP, .ringTip],
+            [.littleMCP, .littlePIP, .littleDIP, .littleTip]
+        ]
+        func pixel(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: point.x * viewport.width, y: point.y * viewport.height)
+        }
+        return chains.map { chain in
+            guard let a = points[chain[0].rawValue],
+                  let b = points[chain[1].rawValue],
+                  let c = points[chain[2].rawValue],
+                  let d = points[chain[3].rawValue] else { return 0 }
+            return normalizedFingerCurl([pixel(a), pixel(b), pixel(c), pixel(d)])
+        }
     }
 
     private static func openness(of points: [CGPoint?]) -> Double {

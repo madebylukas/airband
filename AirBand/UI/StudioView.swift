@@ -1,6 +1,7 @@
 import SwiftUI
 
 private let ink = Color(red: 0.015, green: 0.017, blue: 0.022)
+private let readyGreen = Color(red: 0.30, green: 1.0, blue: 0.55)
 
 struct StudioView: View {
     @StateObject private var model = StudioModel()
@@ -63,7 +64,7 @@ struct StudioView: View {
         } message: { Text(model.error ?? "") }
         .onChange(of: scenePhase) { _, phase in if phase != .active { model.stop() } }
         .onChange(of: model.palette) { _, _ in model.syncAudio() }
-        .onChange(of: model.mode) { _, _ in model.syncAudio() }
+        .onChange(of: model.mode) { _, _ in model.modeDidChange() }
     }
 
     private var readout: String {
@@ -71,6 +72,7 @@ struct StudioView: View {
         case .free: return model.music.active ? model.music.noteName : "—"
         case .song: return "\(model.music.keyName)  ·  \(Int(model.music.tempo)) BPM"
         case .drums: return "\(Int(model.music.tempo)) BPM"
+        case .jam: return model.touchMode ? model.music.noteName : model.handsReady ? "READY" : "—"
         }
     }
 
@@ -78,8 +80,12 @@ struct StudioView: View {
         HStack {
             Text("airband").font(.system(size: 23, weight: .medium, design: .rounded)).tracking(-0.9)
             if model.playing && !model.touchMode {
-                Circle().fill(model.faceTracked ? .white : .white.opacity(0.3)).frame(width: 5, height: 5)
-                    .accessibilityLabel(model.faceTracked ? "Face tracking active" : "Looking for your face")
+                Circle()
+                    .fill(model.mode == .jam && model.handsReady ? readyGreen : .white.opacity(model.faceTracked ? 0.42 : 0.2))
+                    .frame(width: model.handsReady ? 7 : 5, height: model.handsReady ? 7 : 5)
+                    .shadow(color: model.handsReady ? readyGreen.opacity(0.8) : .clear, radius: 7)
+                    .accessibilityLabel(model.handsReady ? "Hands ready" : "Waiting for both open hands")
+                    .animation(.easeOut(duration: 0.16), value: model.handsReady)
             }
             Spacer()
             Menu {
@@ -124,6 +130,8 @@ struct StudioView: View {
                         demo: model.touchMode || !model.playing,
                         hands: model.handPoses,
                         mode: model.mode,
+                        ready: model.handsReady,
+                        activeFingers: model.activeFingers,
                         brightness: model.music.brightness + model.music.distortion + model.music.space * 0.5
                     )
                 }.allowsHitTesting(false)
@@ -176,20 +184,14 @@ struct StudioView: View {
                 }
             }.disabled(model.starting).accessibilityIdentifier("transport")
                 .accessibilityLabel(model.playing ? "Stop session" : "Start playing")
-            if model.touchMode {
-                Button { model.triggerWink(.left) } label: {
-                    Image(systemName: model.mode == .drums ? "burst" : "eye")
-                        .font(.system(size: 24, weight: .ultraLight)).frame(width: satellite, height: satellite)
-                }.airGlass(Circle()).opacity(model.playing ? 1 : 0.35).disabled(!model.playing)
-                    .accessibilityLabel(model.mode == .drums ? "Play cymbal" : "Play fart sample")
-            } else {
-                HStack(alignment: .center, spacing: 4) {
-                    ForEach(0..<7) { _ in
-                        Capsule().fill(.white.opacity(model.music.active ? 0.8 : 0.18))
-                            .frame(width: 2, height: model.music.active ? 24 : 4)
-                    }
-                }.frame(width: satellite, height: satellite).accessibilityLabel(model.music.active ? "Sound active" : "Raise a hand to play")
-            }
+            Button { model.toggleMetronome() } label: {
+                ZStack(alignment: .bottom) {
+                    Image(systemName: "metronome").font(.system(size: 24, weight: .ultraLight))
+                    Capsule().fill(.white.opacity(model.music.metronomeEnabled ? 0.95 : 0.16))
+                        .frame(width: model.music.metronomeEnabled ? 18 : 5, height: 2)
+                        .offset(y: -11)
+                }.frame(width: satellite, height: satellite)
+            }.airGlass(Circle()).accessibilityLabel(model.music.metronomeEnabled ? "Turn metronome off" : "Turn metronome on")
         }
     }
 
@@ -204,8 +206,10 @@ struct StudioView: View {
                 }
                 Text("Prop your iPhone up in portrait or landscape, an arm’s length away. Keep both open hands and your face in view.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
-                guideRow("hand.raised", "Left hand", "Height chooses the note or song key. Move sideways for octave. Angle the knuckles to muffle.")
-                guideRow("hand.raised.fingers.spread", "Right hand", "Height controls tempo in Song and Drums. Angle the knuckles for distortion.")
+                guideRow("hand.raised", "Jam position", "Show both open hands, palms up. The light turns green when the finger triggers are armed.")
+                guideRow("circle.grid.cross", "Left fingers", "Thumb: sub. Index: kick. Middle: snare. Ring: cymbal. Little: hi-hat.")
+                guideRow("music.quarternote.3", "Right fingers", "Five notes use the selected synth and one minor pentatonic scale, so bad notes have been politely removed.")
+                guideRow("arrow.up.and.down", "Hand height", "Raise the left hand for louder drums. Raise the right hand for louder melody.")
                 guideRow("viewfinder", "Palm plane", "Start flat and level to set neutral. Flip a palm upward to open the space effect.")
                 guideRow("face.smiling", "Face", "Smile for shimmer. Open your mouth for vibrato.")
                 guideRow("eye", "Winks", "Left plays your fart; right plays the ding. In Drums they become cymbal and kick.")
@@ -245,6 +249,8 @@ private struct SignalCanvas: View {
     let demo: Bool
     let hands: [HandPoseSample]
     let mode: PerformanceMode
+    let ready: Bool
+    let activeFingers: Set<FingerKey>
     let brightness: Double
 
     private let fingerChains: [[HandJoint]] = [
@@ -258,7 +264,7 @@ private struct SignalCanvas: View {
 
     var body: some View {
         Canvas { context, size in
-            let color = Color.white
+            let color = ready ? readyGreen : Color.white
             let landscape = size.width > size.height
             let center = CGPoint(x: size.width / 2, y: size.height * (landscape ? 0.22 : 0.39))
             if demo { drawIdleField(context: &context, size: size, center: center, color: color) }
@@ -295,10 +301,10 @@ private struct SignalCanvas: View {
             plane.addLine(to: screen(middle))
             plane.addLine(to: screen(little))
             plane.closeSubpath()
-            context.fill(plane, with: .color(.white.opacity(0.025 + hand.zTilt * 0.09)))
+            context.fill(plane, with: .color((ready ? readyGreen : .white).opacity(0.025 + hand.zTilt * 0.09)))
             var axis = Path()
             axis.move(to: screen(index)); axis.addLine(to: screen(little))
-            context.stroke(axis, with: .color(.white.opacity(0.5 + hand.xyRotation * 0.38)), lineWidth: 1.6)
+            context.stroke(axis, with: .color((ready ? readyGreen : .white).opacity(0.5 + hand.xyRotation * 0.38)), lineWidth: 1.6)
         }
         for chain in fingerChains {
             var path = Path()
@@ -308,20 +314,22 @@ private struct SignalCanvas: View {
                 let p = screen(point)
                 if drawing { path.addLine(to: p) } else { path.move(to: p); drawing = true }
             }
-            context.stroke(path, with: .color(.white.opacity(0.72)), lineWidth: 1.05)
+            context.stroke(path, with: .color((ready ? readyGreen : .white).opacity(0.72)), lineWidth: 1.05)
         }
         for joint in HandJoint.allCases {
             guard let point = hand[joint] else { continue }
             let p = screen(point)
-            let tip = [.thumbTip, .indexTip, .middleTip, .ringTip, .littleTip].contains(joint)
-            let radius: CGFloat = tip ? 2.8 : 1.45
-            context.fill(Path(ellipseIn: CGRect(x: p.x-radius, y: p.y-radius, width: radius*2, height: radius*2)), with: .color(.white.opacity(tip ? 0.95 : 0.65)))
+            let finger = FingerName.allCases.first { $0.tipJoint == joint }
+            let pulsing = finger.map { activeFingers.contains(FingerKey(side: hand.side, finger: $0)) } == true
+            let radius: CGFloat = pulsing ? 8 : finger == nil ? 1.45 : 2.8
+            let dotColor = pulsing ? readyGreen : ready ? readyGreen : .white
+            context.fill(Path(ellipseIn: CGRect(x: p.x-radius, y: p.y-radius, width: radius*2, height: radius*2)), with: .color(dotColor.opacity(finger == nil ? 0.65 : 0.95)))
         }
         let position = screen(hand.center)
         let haloRadius = CGFloat(7 + hand.zTilt * 18)
         context.stroke(
             Path(ellipseIn: CGRect(x: position.x - haloRadius, y: position.y - haloRadius, width: haloRadius * 2, height: haloRadius * 2)),
-            with: .color(.white.opacity(0.12 + hand.zTilt * 0.34)),
+            with: .color((ready ? readyGreen : .white).opacity(0.12 + hand.zTilt * 0.34)),
             lineWidth: 0.8
         )
         let label = handLabel(hand.side)
@@ -336,6 +344,7 @@ private struct SignalCanvas: View {
         case .free: return side == .left ? "MELODY" : "DISTORT"
         case .song: return side == .left ? "MELODY" : "BASS · BEAT"
         case .drums: return side == .left ? "CYMBAL" : "KICK"
+        case .jam: return side == .left ? "DRUMS" : "MELODY"
         }
     }
 

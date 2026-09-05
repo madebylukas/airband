@@ -9,13 +9,13 @@ enum SoundPalette: Int, CaseIterable, Identifiable {
 }
 
 enum PerformanceMode: Int, CaseIterable, Identifiable {
-    case free, song, drums
+    case free, song, drums, jam
     var id: Int { rawValue }
-    var title: String { ["Free", "Song", "Drums"][rawValue] }
-    var symbol: String { ["waveform", "music.note.list", "circle.grid.cross"][rawValue] }
+    var title: String { ["Free", "Song", "Drums", "Jam"][rawValue] }
+    var symbol: String { ["waveform", "music.note.list", "circle.grid.cross", "hand.raised.fingers.spread"][rawValue] }
 }
 
-enum HandSide: String, CaseIterable, Identifiable {
+enum HandSide: String, CaseIterable, Identifiable, Hashable {
     case left, right
     var id: String { rawValue }
 }
@@ -29,15 +29,35 @@ enum HandJoint: Int, CaseIterable {
     case littleMCP, littlePIP, littleDIP, littleTip
 }
 
+enum FingerName: Int, CaseIterable, Identifiable, Hashable {
+    case thumb, index, middle, ring, little
+    var id: Int { rawValue }
+    var tipJoint: HandJoint { [.thumbTip, .indexTip, .middleTip, .ringTip, .littleTip][rawValue] }
+    var drumName: String { ["SUB", "KICK", "SNARE", "CYMBAL", "HAT"][rawValue] }
+}
+
+struct FingerKey: Hashable {
+    let side: HandSide
+    let finger: FingerName
+}
+
 struct HandPoseSample: Identifiable {
     let side: HandSide
     var points: [CGPoint?]
     var xyRotation: Double
     var zTilt: Double
     var openness: Double
+    var fingerCurls: [Double]
     var id: HandSide { side }
 
-    init(side: HandSide, points: [CGPoint?], xyRotation: Double = 0, zTilt: Double = 0, openness: Double = 0) {
+    init(
+        side: HandSide,
+        points: [CGPoint?],
+        xyRotation: Double = 0,
+        zTilt: Double = 0,
+        openness: Double = 0,
+        fingerCurls: [Double] = []
+    ) {
         self.side = side
         self.points = points.count == HandJoint.allCases.count
             ? points
@@ -45,6 +65,9 @@ struct HandPoseSample: Identifiable {
         self.xyRotation = xyRotation.clamped
         self.zTilt = zTilt.clamped
         self.openness = openness.clamped
+        self.fingerCurls = FingerName.allCases.indices.map { index in
+            fingerCurls.indices.contains(index) ? fingerCurls[index].clamped : 0
+        }
     }
 
     subscript(_ joint: HandJoint) -> CGPoint? {
@@ -60,6 +83,8 @@ struct HandPoseSample: Identifiable {
             y: visible.map(\.y).reduce(0, +) / CGFloat(visible.count)
         )
     }
+
+    func curl(_ finger: FingerName) -> Double { fingerCurls[finger.rawValue] }
 }
 
 struct MusicalState {
@@ -71,6 +96,9 @@ struct MusicalState {
     var distortion: Double = 0
     var muffle: Double = 0
     var space: Double = 0
+    var drumVolume: Double = 0.72
+    var melodyVolume: Double = 0.72
+    var metronomeEnabled = false
     var tempo: Double = 108
     var scaleIndex = 2
     var octaveIndex = 1
@@ -111,6 +139,31 @@ struct HysteresisQuantizer {
             index = min(count - 1, max(0, Int(unit)))
         }
         return index
+    }
+}
+
+struct FingerStrikeDetector {
+    private var armed = Array(repeating: false, count: FingerName.allCases.count)
+    private var previous = Array(repeating: 0.0, count: FingerName.allCases.count)
+    private var lastFire = Array(repeating: -Double.infinity, count: FingerName.allCases.count)
+
+    mutating func reset() { self = FingerStrikeDetector() }
+
+    mutating func update(curls: [Double], enabled: Bool, time: Double) -> [FingerName] {
+        guard time.isFinite else { reset(); return [] }
+        var strikes: [FingerName] = []
+        for finger in FingerName.allCases {
+            let index = finger.rawValue
+            let curl = curls.indices.contains(index) ? curls[index].clamped : 0
+            if curl < 0.30 { armed[index] = true }
+            if enabled, armed[index], curl >= 0.52, previous[index] < 0.52, time - lastFire[index] > 0.16 {
+                armed[index] = false
+                lastFire[index] = time
+                strikes.append(finger)
+            }
+            previous[index] = curl
+        }
+        return strikes
     }
 }
 
@@ -169,22 +222,28 @@ struct WinkDetector {
 
     mutating func update(left: Double, right: Double, time: Double) -> WinkSide? {
         guard left.isFinite, right.isFinite, time.isFinite else { reset(); return nil }
-        if left < 0.25 && right < 0.25 {
+        if left < 0.36 && right < 0.36 {
             candidateSince = nil; candidateSide = nil
             if openSince == nil { openSince = time }
-            if time - (openSince ?? time) >= 0.15 { armed = true }
+            if time - (openSince ?? time) >= 0.08 { armed = true }
             return nil
         }
         openSince = nil
-        let side: WinkSide? = left > 0.7 && right < 0.25 ? .left : right > 0.7 && left < 0.25 ? .right : nil
-        guard let side else {
+        if left > 0.48, right > 0.48 {
             candidateSince = nil; candidateSide = nil
-            if left > 0.4 && right > 0.4 { armed = false }
+            armed = false
             return nil
         }
-        guard armed, time - lastFire > 0.85 else { return nil }
+        let side: WinkSide? = left > 0.52 && right < 0.42 && left - right > 0.25
+            ? .left
+            : right > 0.52 && left < 0.42 && right - left > 0.25 ? .right : nil
+        guard let side else {
+            candidateSince = nil; candidateSide = nil
+            return nil
+        }
+        guard armed, time - lastFire > 0.55 else { return nil }
         if candidateSide != side { candidateSide = side; candidateSince = time }
-        guard time - (candidateSince ?? time) >= 0.12 else { return nil }
+        guard time - (candidateSince ?? time) >= 0.045 else { return nil }
         armed = false; candidateSince = nil; candidateSide = nil; lastFire = time
         return side
     }
@@ -205,6 +264,25 @@ func relativePalmZTilt(normal: SIMD3<Float>, neutral: SIMD3<Float>) -> Double {
     guard normalLength > 0.00001, neutralLength > 0.00001 else { return 0 }
     let dot = (normal.x * neutral.x + normal.y * neutral.y + normal.z * neutral.z) / (normalLength * neutralLength)
     return ((1 - Double(min(1, max(-1, dot)))) * 0.5).clamped
+}
+
+func normalizedFingerCurl(_ points: [CGPoint]) -> Double {
+    guard points.count == 4 else { return 0 }
+    func distance(_ a: CGPoint, _ b: CGPoint) -> Double {
+        Double(hypot(a.x - b.x, a.y - b.y))
+    }
+    func bend(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> Double {
+        let first = CGVector(dx: a.x - b.x, dy: a.y - b.y)
+        let second = CGVector(dx: c.x - b.x, dy: c.y - b.y)
+        let denominator = hypot(first.dx, first.dy) * hypot(second.dx, second.dy)
+        guard denominator > 0.001 else { return 0 }
+        let cosine = min(1, max(-1, (first.dx * second.dx + first.dy * second.dy) / denominator))
+        return 1 - Double(acos(cosine) / .pi)
+    }
+    let strongestBend = max(bend(points[0], points[1], points[2]), bend(points[1], points[2], points[3]))
+    let pathLength = distance(points[0], points[1]) + distance(points[1], points[2]) + distance(points[2], points[3])
+    let compression = pathLength > 0.001 ? 1 - distance(points[0], points[3]) / pathLength : 0
+    return ((max(strongestBend, compression * 1.25) - 0.08) / 0.55).clamped
 }
 
 extension Double {
