@@ -20,6 +20,7 @@ The project targets iOS 18 and uses SwiftUI, ARKit, Vision, SceneKit, and AVAudi
 - Left-hand height: synth volume; horizontal position changes octave.
 - Right-hand height: drum volume.
 - Metronome button: independent tempo reference.
+- Modes switch live from the top-right menu; the performance keeps running.
 
 ### Other modes
 
@@ -28,6 +29,7 @@ The project targets iOS 18 and uses SwiftUI, ARKit, Vision, SceneKit, and AVAudi
 - Left-hand outward rotation: low-pass muffle
 - Right-hand height: tempo in Song and Drums
 - Right-hand outward rotation: distortion
+- Drum mode’s right-side scale shows tempo: up is faster, down is slower.
 - Distance between hands: volume in Free mode
 - Smile: brightness
 - Open mouth: vibrato and supplied rizz sample

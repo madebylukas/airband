@@ -207,7 +207,12 @@ void ab_render(ABSynth *s, float *out, uint32_t frames) {
         double percussion = mode == 0 ? 0 : kick + subKick + snare + hat;
         double melodicGain = mode == 3 ? s->melodyGain : s->gain;
         double percussionGain = mode == 3 ? s->drumGain : s->gain;
-        double sample = musicMix * melodicGain + percussion * percussionGain;
+        double percussionMix = percussion * percussionGain;
+        if (mode == 2) {
+            double drivenPercussion = tanh(percussionMix * (1 + s->drive * 6)) / (1 + s->drive * 0.5);
+            percussionMix = percussionMix * (1 - s->drive) + drivenPercussion * s->drive;
+        }
+        double sample = musicMix * melodicGain * 0.82 + percussionMix;
 
         double cutoff = 260 + pow(1 - s->muffle, 2) * 15000;
         double filterAlpha = 1 - exp(-tau * cutoff / s->sr);

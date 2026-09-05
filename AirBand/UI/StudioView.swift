@@ -14,8 +14,8 @@ struct StudioView: View {
             ZStack {
                 ink.ignoresSafeArea()
                 field.ignoresSafeArea(edges: .bottom)
-                if model.playing && !model.touchMode && model.mode == .jam {
-                    volumeAxes(in: geo.size, landscape: landscape)
+                if model.playing && !model.touchMode {
+                    controlGuides(in: geo.size, landscape: landscape)
                 }
                 if model.playing && !model.touchMode && model.mode == .jam && (!model.handsReady || !model.hasPlayedFinger) {
                     launchInstruction(landscape: landscape)
@@ -69,7 +69,6 @@ struct StudioView: View {
             if phase == .active { Task { await model.start() } }
             else { model.stop() }
         }
-        .onChange(of: model.mode) { _, _ in model.modeDidChange() }
     }
 
     private var readout: String {
@@ -94,9 +93,9 @@ struct StudioView: View {
             }
             Spacer()
             Menu {
-                Picker("Performance", selection: $model.mode) {
-                    ForEach(PerformanceMode.allCases) { mode in
-                        Label(mode.title, systemImage: mode.symbol).tag(mode)
+                ForEach(PerformanceMode.allCases) { mode in
+                    Button { model.selectMode(mode) } label: {
+                        Label(mode.title, systemImage: model.mode == mode ? "checkmark.circle.fill" : mode.symbol)
                     }
                 }
                 Divider()
@@ -188,12 +187,57 @@ struct StudioView: View {
         }
     }
 
-    private func volumeAxes(in size: CGSize, landscape: Bool) -> some View {
-        let railHeight = min(landscape ? 142 : 245, size.height * (landscape ? 0.38 : 0.31))
+    private func controlGuides(in size: CGSize, landscape: Bool) -> some View {
+        let railHeight = min(landscape ? 98 : 205, size.height * (landscape ? 0.27 : 0.27))
+        let detected = !model.handPoses.isEmpty
+        let tempoLevel = ((model.music.tempo - 64) / 112).clamped
+        let left: ControlGuideSpec?
+        let right: ControlGuideSpec?
+        switch model.mode {
+        case .jam:
+            left = ControlGuideSpec(
+                title: "SYNTH", top: "LOUDER", bottom: "QUIETER", value: model.music.melodyVolume,
+                hints: [
+                    ControlHint(symbol: "arrow.left.and.right", title: "OCTAVE"),
+                    ControlHint(symbol: "rotate.right", title: "MUFFLE"),
+                    ControlHint(symbol: "hand.raised.fill", title: "FIST · DISTORT")
+                ]
+            )
+            right = ControlGuideSpec(title: "DRUMS", top: "LOUDER", bottom: "QUIETER", value: model.music.drumVolume)
+        case .song:
+            left = ControlGuideSpec(
+                title: "KEY", top: "HIGHER", bottom: "LOWER", value: model.music.height,
+                hints: [
+                    ControlHint(symbol: "arrow.left.and.right", title: "OCTAVE"),
+                    ControlHint(symbol: "rotate.right", title: "MUFFLE")
+                ]
+            )
+            right = ControlGuideSpec(
+                title: "TEMPO", top: "FASTER", bottom: "SLOWER", value: tempoLevel,
+                hints: [ControlHint(symbol: "rotate.right", title: "DISTORT")]
+            )
+        case .drums:
+            left = nil
+            right = ControlGuideSpec(
+                title: "TEMPO", top: "FASTER", bottom: "SLOWER", value: tempoLevel,
+                hints: [ControlHint(symbol: "rotate.right", title: "DISTORT")]
+            )
+        case .free:
+            left = ControlGuideSpec(
+                title: "PITCH", top: "HIGHER", bottom: "LOWER", value: model.music.height,
+                hints: [
+                    ControlHint(symbol: "arrow.left.and.right", title: "OCTAVE"),
+                    ControlHint(symbol: "rotate.right", title: "MUFFLE")
+                ]
+            )
+            right = ControlGuideSpec(
+                hints: [ControlHint(symbol: "rotate.right", title: "DISTORT")]
+            )
+        }
         return HStack {
-            VolumeAxis(title: "SYNTH", value: model.music.melodyVolume, ready: model.handsReady, height: railHeight)
+            if let left { ControlGuide(spec: left, active: model.mode == .jam ? model.handsReady : detected, railHeight: railHeight) }
             Spacer()
-            VolumeAxis(title: "DRUMS", value: model.music.drumVolume, ready: model.handsReady, height: railHeight)
+            if let right { ControlGuide(spec: right, active: model.mode == .jam ? model.handsReady : detected, railHeight: railHeight) }
         }
         .padding(.horizontal, landscape ? 18 : 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -277,41 +321,86 @@ private extension View {
     }
 }
 
-private struct VolumeAxis: View {
+private struct ControlHint {
+    let symbol: String
     let title: String
-    let value: Double
-    let ready: Bool
-    let height: CGFloat
+}
 
-    private var level: CGFloat { CGFloat(min(1, max(0, value))) }
-    private var color: Color { ready ? readyGreen : .white }
+private struct ControlGuideSpec {
+    var title: String?
+    var top: String?
+    var bottom: String?
+    var value: Double
+    var hints: [ControlHint]
+
+    init(title: String? = nil, top: String? = nil, bottom: String? = nil, value: Double = 0, hints: [ControlHint] = []) {
+        self.title = title
+        self.top = top
+        self.bottom = bottom
+        self.value = value
+        self.hints = hints
+    }
+}
+
+private struct ControlGuide: View {
+    let spec: ControlGuideSpec
+    let active: Bool
+    let railHeight: CGFloat
+
+    private var level: CGFloat { CGFloat(min(1, max(0, spec.value))) }
+    private var color: Color { active ? readyGreen : .white }
 
     var body: some View {
-        VStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                .tracking(1.3)
-            GeometryReader { geo in
-                ZStack(alignment: .bottom) {
-                    Capsule().fill(.white.opacity(0.15)).frame(width: 2)
-                    Capsule().fill(color.opacity(0.72)).frame(width: 2, height: max(2, geo.size.height * level))
-                    Circle()
-                        .fill(color)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: color.opacity(0.65), radius: ready ? 5 : 2)
-                        .position(x: geo.size.width / 2, y: max(3.5, (1 - level) * (geo.size.height - 7) + 3.5))
+        VStack(spacing: 7) {
+            if let title = spec.title, let top = spec.top, let bottom = spec.bottom {
+                Text(title)
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .tracking(1.3)
+                Text(top)
+                    .font(.system(size: 7, weight: .medium, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(.white.opacity(0.46))
+                GeometryReader { geo in
+                    ZStack(alignment: .bottom) {
+                        Capsule().fill(.white.opacity(0.15)).frame(width: 2)
+                        Capsule().fill(color.opacity(0.72)).frame(width: 2, height: max(2, geo.size.height * level))
+                        Circle()
+                            .fill(color)
+                            .frame(width: 7, height: 7)
+                            .shadow(color: color.opacity(0.65), radius: active ? 5 : 2)
+                            .position(x: geo.size.width / 2, y: max(3.5, (1 - level) * (geo.size.height - 7) + 3.5))
+                    }
                 }
+                .frame(width: 12, height: railHeight)
+                Text(bottom)
+                    .font(.system(size: 7, weight: .medium, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(.white.opacity(0.46))
             }
-            .frame(width: 12, height: height)
-            Image(systemName: "arrow.up")
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(.white.opacity(0.48))
+            ForEach(Array(spec.hints.enumerated()), id: \.offset) { _, hint in
+                HStack(spacing: 4) {
+                    Image(systemName: hint.symbol)
+                    Text(hint.title)
+                }
+                .font(.system(size: 7, weight: .semibold, design: .monospaced))
+                .tracking(0.45)
+                .foregroundStyle(.white.opacity(0.56))
+                .lineLimit(1)
+            }
         }
+        .frame(width: 82)
         .foregroundStyle(.white.opacity(0.72))
-        .animation(.linear(duration: 0.08), value: value)
+        .animation(.linear(duration: 0.08), value: spec.value)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title.capitalized) volume")
+        .accessibilityLabel(accessibilityDescription)
         .accessibilityValue("\(Int(level * 100)) percent")
+    }
+
+    private var accessibilityDescription: String {
+        let vertical = [spec.title, spec.top.map { "up means \($0.lowercased())" }, spec.bottom.map { "down means \($0.lowercased())" }]
+            .compactMap { $0 }.joined(separator: ". ")
+        let hints = spec.hints.map(\.title).joined(separator: ". ")
+        return [vertical, hints].filter { !$0.isEmpty }.joined(separator: ". ")
     }
 }
 

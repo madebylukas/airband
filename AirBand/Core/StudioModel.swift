@@ -5,7 +5,7 @@ import AVFoundation
 final class StudioModel: ObservableObject {
     @Published var playing = false
     @Published var touchMode = !CameraTracker.supported
-    @Published var mode: PerformanceMode = .jam
+    @Published private(set) var mode: PerformanceMode = .jam
     private let palette: SoundPalette = .prism
     @Published var music = MusicalState()
     @Published var handPoses: [HandPoseSample] = []
@@ -104,7 +104,9 @@ final class StudioModel: ObservableObject {
         audio.update(music, mode: audioMode, palette: palette)
     }
 
-    func modeDidChange() {
+    func selectMode(_ newMode: PerformanceMode) {
+        guard newMode != mode else { return }
+        mode = newMode
         if mode == .jam { hasPlayedFinger = false }
         resetFingerPerformance()
         syncAudio()
