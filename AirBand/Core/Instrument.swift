@@ -1,12 +1,6 @@
 import Foundation
 
-enum SoundPalette: Int, CaseIterable, Identifiable {
-    case prism, halo, pulse
-    var id: Int { rawValue }
-    var title: String { ["PRISM", "HALO", "PULSE"][rawValue] }
-    var subtitle: String { ["Crystal lead", "Orbital choir", "Neon sequence"][rawValue] }
-    var symbol: String { ["diamond", "circle.dotted", "waveform.path"][rawValue] }
-}
+enum SoundPalette: Int { case prism }
 
 enum PerformanceMode: Int, CaseIterable, Identifiable {
     case free, song, drums, jam

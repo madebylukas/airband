@@ -6,11 +6,12 @@ final class StudioModel: ObservableObject {
     @Published var playing = false
     @Published var touchMode = !CameraTracker.supported
     @Published var mode: PerformanceMode = .jam
-    @Published var palette: SoundPalette = .prism
+    private let palette: SoundPalette = .prism
     @Published var music = MusicalState()
     @Published var handPoses: [HandPoseSample] = []
     @Published var handsReady = false
     @Published var activeFingers: Set<FingerKey> = []
+    @Published private(set) var hasPlayedFinger = false
     @Published var faceTracked = false
     @Published var error: String?
     @Published var gestureFlash: String?
@@ -68,7 +69,7 @@ final class StudioModel: ObservableObject {
         do {
             try audio.start()
             playing = true; starting = false; error = nil
-            wink.reset(); resetFingerPerformance(); lastFrame = Date()
+            wink.reset(); hasPlayedFinger = false; resetFingerPerformance(); lastFrame = Date()
             if !touchMode { tracker.start() }
             syncAudio()
             watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -100,6 +101,7 @@ final class StudioModel: ObservableObject {
     }
 
     func modeDidChange() {
+        if mode == .jam { hasPlayedFinger = false }
         resetFingerPerformance()
         syncAudio()
     }
@@ -253,6 +255,7 @@ final class StudioModel: ObservableObject {
     }
 
     private func triggerFinger(_ key: FingerKey) {
+        withAnimation(.easeOut(duration: 0.22)) { hasPlayedFinger = true }
         let gesture: AudioGesture
         let label: String
         if key.side == .left {

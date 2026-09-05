@@ -14,6 +14,12 @@ struct StudioView: View {
             ZStack {
                 ink.ignoresSafeArea()
                 field.ignoresSafeArea(edges: .bottom)
+                if model.playing && !model.touchMode && model.mode == .jam {
+                    volumeAxes(in: geo.size, landscape: landscape)
+                }
+                if model.playing && !model.touchMode && model.mode == .jam && !model.hasPlayedFinger {
+                    launchInstruction(landscape: landscape)
+                }
                 VStack(spacing: 0) {
                     header
                     HStack {
@@ -26,13 +32,6 @@ struct StudioView: View {
                         }
                     }.frame(height: 25).padding(.top, landscape ? 2 : 10)
                     Spacer()
-                    if !model.playing {
-                        Text("Music.\nIn your hands.")
-                            .font(.system(size: landscape ? 34 : 43, weight: .light)).tracking(-1.8)
-                            .multilineTextAlignment(.center)
-                            .padding(.bottom, landscape ? 10 : geo.size.height * 0.12)
-                            .allowsHitTesting(false)
-                    }
                     if let flash = model.gestureFlash {
                         Text(flash)
                             .font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(3)
@@ -58,12 +57,18 @@ struct StudioView: View {
         .alert("Session paused", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK", role: .cancel) { model.error = nil }
             if !model.touchMode {
-                Button("Use Touch mode") { model.setInputMode(touch: true) }
+                Button("Use Touch mode") {
+                    model.setInputMode(touch: true)
+                    Task { await model.start() }
+                }
                 Button("Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             }
         } message: { Text(model.error ?? "") }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { model.stop() } }
-        .onChange(of: model.palette) { _, _ in model.syncAudio() }
+        .task { await model.start() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await model.start() } }
+            else { model.stop() }
+        }
         .onChange(of: model.mode) { _, _ in model.modeDidChange() }
     }
 
@@ -97,6 +102,7 @@ struct StudioView: View {
                 Divider()
                 Button {
                     model.setInputMode(touch: !model.touchMode)
+                    Task { await model.start() }
                 } label: {
                     Label(model.touchMode ? "Use Camera" : "Use Touch", systemImage: model.touchMode ? "camera" : "hand.draw")
                 }
@@ -122,10 +128,9 @@ struct StudioView: View {
                 } else {
                     RadialGradient(colors: [Color(white: 0.12), ink], center: UnitPoint(x: 0.5, y: 0.4), startRadius: 5, endRadius: geo.size.height * 0.55)
                 }
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !model.playing)) { timeline in
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
                     SignalCanvas(
                         time: timeline.date.timeIntervalSinceReferenceDate,
-                        playing: model.playing,
                         active: model.music.active,
                         demo: model.touchMode || !model.playing,
                         hands: model.handPoses,
@@ -157,18 +162,6 @@ struct StudioView: View {
         let transportRing: CGFloat = compact ? 74 : 88
         let transport: CGFloat = compact ? 62 : 72
         return HStack(spacing: compact ? 22 : 26) {
-            Menu {
-                Picker("Sound", selection: $model.palette) {
-                    ForEach(SoundPalette.allCases) { palette in
-                        Label(palette.title.capitalized, systemImage: palette.symbol).tag(palette)
-                    }
-                }
-            } label: {
-                VStack(spacing: 7) {
-                    Image(systemName: model.palette.symbol).font(.system(size: 23, weight: .ultraLight))
-                    Text(model.palette.title.capitalized).font(.system(size: 11, weight: .medium))
-                }.frame(width: satellite, height: satellite)
-            }.airGlass(Circle()).accessibilityLabel("Sound: \(model.palette.title.capitalized)")
             Button {
                 if model.playing { model.stop() } else { Task { await model.start() } }
             } label: {
@@ -195,6 +188,48 @@ struct StudioView: View {
         }
     }
 
+    private func volumeAxes(in size: CGSize, landscape: Bool) -> some View {
+        let railHeight = min(landscape ? 142 : 245, size.height * (landscape ? 0.38 : 0.31))
+        return HStack {
+            VolumeAxis(title: "DRUMS", value: model.music.drumVolume, ready: model.handsReady, height: railHeight)
+            Spacer()
+            VolumeAxis(title: "MELODY", value: model.music.melodyVolume, ready: model.handsReady, height: railHeight)
+        }
+        .padding(.horizontal, landscape ? 18 : 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .offset(y: landscape ? 3 : -5)
+        .allowsHitTesting(false)
+    }
+
+    private func launchInstruction(landscape: Bool) -> some View {
+        VStack(spacing: 0) {
+            Spacer()
+            HStack(spacing: 12) {
+                Image(systemName: model.handsReady ? "hand.point.down.fill" : "hand.raised.fingers.spread")
+                    .font(.system(size: 17, weight: .light))
+                    .foregroundStyle(model.handsReady ? readyGreen : .white.opacity(0.8))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.handsReady ? "CURL A FINGER" : "PALMS UP")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .tracking(1.7)
+                    Text(model.handsReady ? "LEFT DRUMS  ·  RIGHT NOTES" : "OPEN BOTH HANDS")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .tracking(0.9)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 58)
+            .airGlass(Capsule())
+            .animation(.easeOut(duration: 0.16), value: model.handsReady)
+            Spacer()
+        }
+        .padding(.top, landscape ? 44 : 80)
+        .padding(.bottom, landscape ? 66 : 108)
+        .allowsHitTesting(false)
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+    }
+
     private var guide: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 25) {
@@ -208,7 +243,7 @@ struct StudioView: View {
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                 guideRow("hand.raised", "Jam position", "Show both open hands, palms up. The light turns green when the finger triggers are armed.")
                 guideRow("circle.grid.cross", "Left fingers", "Thumb: sub. Index: kick. Middle: snare. Ring: cymbal. Little: hi-hat.")
-                guideRow("music.quarternote.3", "Right fingers", "Five notes use the selected synth and one minor pentatonic scale, so bad notes have been politely removed.")
+                guideRow("music.quarternote.3", "Right fingers", "Five notes use one minor pentatonic scale, so bad notes have been politely removed.")
                 guideRow("arrow.up.and.down", "Hand height", "Raise the left hand for louder drums. Raise the right hand for louder melody.")
                 guideRow("viewfinder", "Palm plane", "Start flat and level to set neutral. Flip a palm upward to open the space effect.")
                 guideRow("face.smiling", "Face", "Smile for shimmer. Open your mouth for vibrato.")
@@ -242,9 +277,46 @@ private extension View {
     }
 }
 
+private struct VolumeAxis: View {
+    let title: String
+    let value: Double
+    let ready: Bool
+    let height: CGFloat
+
+    private var level: CGFloat { CGFloat(min(1, max(0, value))) }
+    private var color: Color { ready ? readyGreen : .white }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .tracking(1.3)
+            GeometryReader { geo in
+                ZStack(alignment: .bottom) {
+                    Capsule().fill(.white.opacity(0.15)).frame(width: 2)
+                    Capsule().fill(color.opacity(0.72)).frame(width: 2, height: max(2, geo.size.height * level))
+                    Circle()
+                        .fill(color)
+                        .frame(width: 7, height: 7)
+                        .shadow(color: color.opacity(0.65), radius: ready ? 5 : 2)
+                        .position(x: geo.size.width / 2, y: max(3.5, (1 - level) * (geo.size.height - 7) + 3.5))
+                }
+            }
+            .frame(width: 12, height: height)
+            Image(systemName: "arrow.up")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(.white.opacity(0.48))
+        }
+        .foregroundStyle(.white.opacity(0.72))
+        .animation(.linear(duration: 0.08), value: value)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title.capitalized) volume")
+        .accessibilityValue("\(Int(level * 100)) percent")
+    }
+}
+
 private struct SignalCanvas: View {
     let time: Double
-    let playing: Bool
     let active: Bool
     let demo: Bool
     let hands: [HandPoseSample]
@@ -265,9 +337,7 @@ private struct SignalCanvas: View {
     var body: some View {
         Canvas { context, size in
             let color = ready ? readyGreen : Color.white
-            let landscape = size.width > size.height
-            let center = CGPoint(x: size.width / 2, y: size.height * (landscape ? 0.22 : 0.39))
-            if demo { drawIdleField(context: &context, size: size, center: center, color: color) }
+            if demo { drawAmbientField(context: &context, size: size, color: color) }
 
             let centers = hands.map { CGPoint(x: $0.center.x * size.width, y: $0.center.y * size.height) }
             if centers.count == 2 {
@@ -348,36 +418,22 @@ private struct SignalCanvas: View {
         }
     }
 
-    private func drawIdleField(context: inout GraphicsContext, size: CGSize, center: CGPoint, color: Color) {
-        let unit = min(size.width, size.height)
-        for row in 0..<19 {
-            let latitude = Double(row) / 18 * .pi
-            let radius = sin(latitude)
-            var line = Path()
-            for col in 0...28 {
-                let longitude = Double(col) / 28 * .pi
-                let x = center.x + CGFloat(cos(longitude) * radius) * unit * 0.25
-                let y = center.y + CGFloat(cos(latitude)) * unit * 0.21 + CGFloat(sin(longitude) * radius) * unit * 0.035
-                let point = CGPoint(x: x, y: y)
-                if col == 0 { line.move(to: point) } else { line.addLine(to: point) }
-                if col.isMultiple(of: 2) {
-                    context.fill(Path(ellipseIn: CGRect(x: x-0.7, y: y-0.7, width: 1.4, height: 1.4)), with: .color(color.opacity(playing ? 0.65 : 0.5)))
-                }
+    private func drawAmbientField(context: inout GraphicsContext, size: CGSize, color: Color) {
+        let amplitude = min(size.width, size.height) * 0.035
+        for strand in 0..<9 {
+            let baseline = size.height * (0.31 + CGFloat(strand) * 0.045)
+            var path = Path()
+            for step in 0...100 {
+                let progress = Double(step) / 100
+                let x = CGFloat(progress) * size.width
+                let envelope = sin(progress * .pi)
+                let wave = sin(progress * 15 + time * 1.8 + Double(strand) * 0.58)
+                let drift = sin(progress * 4 - time * 0.55 + Double(strand)) * 0.35
+                let y = baseline + CGFloat((wave + drift) * envelope) * amplitude
+                if step == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                else { path.addLine(to: CGPoint(x: x, y: y)) }
             }
-            context.stroke(line, with: .color(color.opacity(0.14)), lineWidth: 0.5)
-        }
-        for col in 0...14 {
-            let longitude = Double(col) / 14 * .pi
-            var line = Path()
-            for row in 0...36 {
-                let latitude = Double(row) / 36 * .pi
-                let point = CGPoint(
-                    x: center.x + CGFloat(cos(longitude) * sin(latitude)) * unit * 0.25,
-                    y: center.y + CGFloat(cos(latitude)) * unit * 0.21 + CGFloat(sin(longitude) * sin(latitude)) * unit * 0.035
-                )
-                if row == 0 { line.move(to: point) } else { line.addLine(to: point) }
-            }
-            context.stroke(line, with: .color(color.opacity(0.12)), lineWidth: 0.5)
+            context.stroke(path, with: .color(color.opacity(strand == 4 ? 0.34 : 0.12)), lineWidth: strand == 4 ? 1.25 : 0.55)
         }
     }
 }
