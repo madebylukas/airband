@@ -140,24 +140,62 @@ struct FingerStrikeDetector {
     private var armed = Array(repeating: false, count: FingerName.allCases.count)
     private var previous = Array(repeating: 0.0, count: FingerName.allCases.count)
     private var lastFire = Array(repeating: -Double.infinity, count: FingerName.allCases.count)
+    private var previousTime: Double?
 
     mutating func reset() { self = FingerStrikeDetector() }
 
     mutating func update(curls: [Double], enabled: Bool, time: Double) -> [FingerName] {
         guard time.isFinite else { reset(); return [] }
+        let dt = previousTime.map { min(0.2, max(1.0 / 120.0, time - $0)) }
         var strikes: [FingerName] = []
         for finger in FingerName.allCases {
             let index = finger.rawValue
             let curl = curls.indices.contains(index) ? curls[index].clamped : 0
+            let delta = curl - previous[index]
+            let velocity = dt.map { delta / $0 } ?? 0
+            let fastCurl = curl >= 0.38 && previous[index] < 0.38 && delta >= 0.12 && velocity >= 2.0
+            let deliberateCurl = curl >= 0.48 && previous[index] < 0.48
             if curl < 0.30 { armed[index] = true }
-            if enabled, armed[index], curl >= 0.52, previous[index] < 0.52, time - lastFire[index] > 0.16 {
+            if enabled, armed[index], fastCurl || deliberateCurl, time - lastFire[index] > 0.11 {
                 armed[index] = false
                 lastFire[index] = time
                 strikes.append(finger)
             }
             previous[index] = curl
         }
+        previousTime = time
         return strikes
+    }
+}
+
+func mouthExpression(_ jaw: Double) -> Double {
+    sqrt(((jaw - 0.08) / 0.54).clamped)
+}
+
+struct MouthOpenDetector {
+    private var armed = false
+    private var candidateSince: Double?
+    private var lastFire = -Double.infinity
+
+    mutating func reset() { self = MouthOpenDetector() }
+
+    mutating func update(openness: Double, time: Double) -> Bool {
+        guard openness.isFinite, time.isFinite else { reset(); return false }
+        if openness < 0.20 {
+            armed = true
+            candidateSince = nil
+            return false
+        }
+        guard armed, openness > 0.36, time - lastFire > 0.65 else {
+            if openness < 0.30 { candidateSince = nil }
+            return false
+        }
+        if candidateSince == nil { candidateSince = time }
+        guard time - (candidateSince ?? time) >= 0.04 else { return false }
+        armed = false
+        candidateSince = nil
+        lastFire = time
+        return true
     }
 }
 

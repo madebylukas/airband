@@ -23,7 +23,7 @@ final class CameraTracker: NSObject, ARSessionDelegate, ARSCNViewDelegate {
     private weak var sceneView: ARSCNView?
     private var filteredOrientation: UIInterfaceOrientation = .unknown
 
-    private let visionQueue = DispatchQueue(label: "com.airband.hands", qos: .userInitiated)
+    private let visionQueue = DispatchQueue(label: "com.airband.hands", qos: .userInteractive)
     private let handRequest = VNDetectHumanHandPoseRequest()
     private let sequenceHandler = VNSequenceRequestHandler()
     private var processing = false

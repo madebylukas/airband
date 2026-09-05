@@ -137,7 +137,7 @@ struct StudioView: View {
                         mode: model.mode,
                         ready: model.handsReady,
                         activeFingers: model.activeFingers,
-                        brightness: model.music.brightness + model.music.distortion + model.music.space * 0.5
+                        brightness: model.music.brightness + model.music.distortion + model.music.space * 0.5 + model.music.vibrato * 0.3
                     )
                 }.allowsHitTesting(false)
                 LinearGradient(colors: [.black.opacity(0.08), .clear, ink.opacity(0.95)], startPoint: .top, endPoint: .bottom).allowsHitTesting(false)

@@ -21,6 +21,7 @@ final class StudioModel: ObservableObject {
     private let audio = AudioEngine()
     private let haptics = PerformanceHaptics()
     private var wink = WinkDetector()
+    private var mouth = MouthOpenDetector()
     private var scaleLatch = HysteresisQuantizer(count: 5, initial: 2)
     private var octaveLatch = HysteresisQuantizer(count: 3, initial: 1, margin: 0.1)
     private var rootLatch = HysteresisQuantizer(count: 12, initial: 5, margin: 0.08)
@@ -71,14 +72,14 @@ final class StudioModel: ObservableObject {
             try audio.start()
             playing = true; starting = false; error = nil
             haptics.prepare()
-            wink.reset(); hasPlayedFinger = false; resetFingerPerformance(); lastFrame = Date()
+            wink.reset(); mouth.reset(); hasPlayedFinger = false; resetFingerPerformance(); lastFrame = Date()
             if !touchMode { tracker.start() }
             syncAudio()
             watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.playing, !self.touchMode, Date().timeIntervalSince(self.lastFrame) > 0.55 else { return }
                     self.music.active = false; self.handPoses = []; self.faceTracked = false
-                    self.wink.reset(); self.resetFingerPerformance(); self.syncAudio()
+                    self.wink.reset(); self.mouth.reset(); self.resetFingerPerformance(); self.syncAudio()
                 }
             }
         } catch {
@@ -91,7 +92,7 @@ final class StudioModel: ObservableObject {
         startToken = UUID(); starting = false
         watchdog?.invalidate(); watchdog = nil
         tracker.stop(); audio.stop(); playing = false
-        music.active = false; handPoses = []; faceTracked = false; wink.reset(); resetFingerPerformance()
+        music.active = false; handPoses = []; faceTracked = false; wink.reset(); mouth.reset(); resetFingerPerformance()
         gestureFlash = nil
     }
 
@@ -213,7 +214,7 @@ final class StudioModel: ObservableObject {
         }
         music.active = !sample.hands.isEmpty
         music.brightness = sample.faceTracked ? max(0.12, sample.smile * 1.5).clamped : 0.24
-        music.vibrato = sample.faceTracked ? (sample.jaw * 1.45).clamped : 0
+        music.vibrato = sample.faceTracked ? mouthExpression(sample.jaw) : 0
         updateFingerPerformance(left: left, right: right, time: sample.time)
         haptics.motion(
             drumVolume: music.drumVolume,
@@ -227,6 +228,11 @@ final class StudioModel: ObservableObject {
             triggerWink(side)
         } else if !sample.faceTracked {
             wink.reset()
+        }
+        if sample.faceTracked {
+            if mouth.update(openness: sample.jaw, time: sample.time) { haptics.mouthOpened() }
+        } else {
+            mouth.reset()
         }
         syncAudio()
     }
@@ -350,6 +356,11 @@ private final class PerformanceHaptics {
         let generator = drumMode ? rigid : medium
         generator.impactOccurred(intensity: drumMode ? 0.86 : 0.66)
         generator.prepare()
+    }
+
+    func mouthOpened() {
+        soft.impactOccurred(intensity: 0.52)
+        soft.prepare()
     }
 
     func finger(_ key: FingerKey, gain: Double) {

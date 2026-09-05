@@ -54,6 +54,20 @@ struct CoreTests {
         expect(fingerStrikes.update(curls: [0, 0.8, 0, 0, 0], enabled: true, time: 0.2).isEmpty, "held finger cannot machine-gun")
         _ = fingerStrikes.update(curls: [0, 0.1, 0, 0, 0], enabled: true, time: 0.3)
         expect(fingerStrikes.update(curls: [0, 0.7, 0, 0, 0], enabled: true, time: 0.5) == [.index], "reopened finger can strike again")
+        var fastFinger = FingerStrikeDetector()
+        _ = fastFinger.update(curls: [0, 0.18, 0, 0, 0], enabled: true, time: 0)
+        expect(fastFinger.update(curls: [0, 0.40, 0, 0, 0], enabled: true, time: 0.04) == [.index], "fast curl fires before full closure")
+        var jitterFinger = FingerStrikeDetector()
+        _ = jitterFinger.update(curls: [0, 0.28, 0, 0, 0], enabled: true, time: 0)
+        expect(jitterFinger.update(curls: [0, 0.37, 0, 0, 0], enabled: true, time: 0.04).isEmpty, "small curl jitter does not fire early")
+
+        expect(mouthExpression(0.08) == 0, "closed mouth has no expression effect")
+        expect(mouthExpression(0.20) > 0.4, "small mouth movement is expressive")
+        var mouth = MouthOpenDetector()
+        expect(!mouth.update(openness: 0.1, time: 0), "closed mouth arms trigger")
+        expect(!mouth.update(openness: 0.42, time: 0.1), "single mouth frame does not trigger")
+        expect(mouth.update(openness: 0.42, time: 0.15), "deliberate mouth opening triggers")
+        expect(!mouth.update(openness: 0.7, time: 0.3), "held mouth cannot repeat")
 
         var detector = WinkDetector()
         func arm(_ at: Double) {
